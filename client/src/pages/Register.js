@@ -142,15 +142,7 @@ export default function Register({ afterRegister }) {
         {loading ? 'Registering...' : 'Register'}
       </button>
 
-      {/* Social Login */}
-      <button style={{ ...styles.button, backgroundColor:'#4267B2', marginTop:10 }}
-        onClick={()=>window.location.href='http://localhost:5000/auth/facebook'}>
-        Register / Login with Facebook
-      </button>
-      <button style={{ ...styles.button, backgroundColor:'#DB4437', marginTop:10 }}
-        onClick={()=>window.location.href='http://localhost:5000/auth/google'}>
-        Register / Login with Google
-      </button>
+     
     </div>
   );
 }
