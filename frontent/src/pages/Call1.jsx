@@ -232,8 +232,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import socket from '../socket';
 
 let pc;
-let localStream; // 🔹 keep reference of local stream
-
+let localStream; 
 export default function Call1({ user, roomInfo, setPage }) {
   const localVideo = useRef();
   const remoteVideo = useRef();
@@ -251,21 +250,24 @@ export default function Call1({ user, roomInfo, setPage }) {
       startPeer(roomId).catch(console.error);
     }
 
-    const onOffer = async (offer) => {
-      if (!pc) await startPeer(roomId, false);
+    const onOffer = async (data) => {
+      const offer = data.offer ?? data;
+      const rId = data.roomId ?? roomId;
+      if (!pc) await startPeer(rId, false);
       await pc.setRemoteDescription(offer);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      // 🔹 answer emit without wrapping in object
-      socket.emit('answer', answer);
+      socket.emit('answer', { roomId: rId, answer });
     };
 
-    const onAnswer = async (answer) => {
+    const onAnswer = async (data) => {
+      const answer = data.answer ?? data;
       if (pc) await pc.setRemoteDescription(answer);
     };
 
-    const onIceCandidate = async (candidate) => {
-      if (pc) await pc.addIceCandidate(candidate);
+    const onIceCandidate = async (data) => {
+      const candidate = data.candidate ?? data;
+      if (pc && candidate) await pc.addIceCandidate(candidate);
     };
 
     socket.on('offer', onOffer);
@@ -304,16 +306,14 @@ export default function Call1({ user, roomInfo, setPage }) {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        // 🔹 candidate emit without wrapping
-        socket.emit('ice-candidate', event.candidate);
+        socket.emit('ice-candidate', { roomId: rId, candidate: event.candidate });
       }
     };
 
     if (initiator) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      // 🔹 offer emit without wrapping
-      socket.emit('offer', offer);
+      socket.emit('offer', { roomId: rId, offer });
     }
 
     window.onbeforeunload = () => {
@@ -461,3 +461,4 @@ const styles = {
     cursor: 'pointer',
   },
 };
+
