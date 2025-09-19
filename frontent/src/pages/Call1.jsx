@@ -232,13 +232,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import socket from '../socket';
 
 let pc;
-let localStream; 
-export default function Call1({ user, roomInfo, setPage }) {
+let localStream;
+let remoteStream;
+let iceQueue = []; // queue ICE candidates until remoteDescription set
+
+export default function Call1({ user, setPage }) {
   const localVideo = useRef();
   const remoteVideo = useRef();
+
   const [inCall, setInCall] = useState(false);
-  const [partner, setPartner] = useState(roomInfo.partner || null);
-  const [roomId, setRoomId] = useState(roomInfo.roomId || null);
+  const [partner, setPartner] = useState(null);
+  const [roomId, setRoomId] = useState(null);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
@@ -246,30 +250,48 @@ export default function Call1({ user, roomInfo, setPage }) {
   useEffect(() => {
     socket.emit('iamonline', { userId: user.id });
 
-    if (roomId && partner) {
-      startPeer(roomId).catch(console.error);
-    }
+    // matched event triggers peer start
+    const onMatched = ({ roomId, partner }) => {
+      setRoomId(roomId);
+      setPartner(partner);
+      startPeer(roomId, true);
+    };
 
-    const onOffer = async (data) => {
-      const offer = data.offer ?? data;
-      const rId = data.roomId ?? roomId;
-      if (!pc) await startPeer(rId, false);
-      await pc.setRemoteDescription(offer);
+    const onOffer = async ({ offer }) => {
+      if (!pc) await startPeer(roomId, false);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit('answer', { roomId: rId, answer });
+      socket.emit('answer', { roomId, answer });
+
+      // add any queued ICE candidates
+      iceQueue.forEach(async candidate => {
+        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+        catch (e) { console.error('Failed to add queued candidate', e); }
+      });
+      iceQueue = [];
     };
 
-    const onAnswer = async (data) => {
-      const answer = data.answer ?? data;
-      if (pc) await pc.setRemoteDescription(answer);
+    const onAnswer = async ({ answer }) => {
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
     };
 
-    const onIceCandidate = async (data) => {
-      const candidate = data.candidate ?? data;
-      if (pc && candidate) await pc.addIceCandidate(candidate);
+    const onIceCandidate = async ({ candidate }) => {
+      if (!candidate) return;
+      if (pc && pc.remoteDescription) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error('Error adding ICE candidate', e);
+        }
+      } else {
+        iceQueue.push(candidate);
+      }
     };
 
+    socket.on('matched', onMatched);
     socket.on('offer', onOffer);
     socket.on('answer', onAnswer);
     socket.on('ice-candidate', onIceCandidate);
@@ -277,19 +299,21 @@ export default function Call1({ user, roomInfo, setPage }) {
     return () => {
       if (pc) pc.close();
       pc = null;
+      iceQueue = [];
+      socket.off('matched', onMatched);
       socket.off('offer', onOffer);
       socket.off('answer', onAnswer);
       socket.off('ice-candidate', onIceCandidate);
       window.onbeforeunload = null;
     };
-  }, [roomId, partner]);
+  }, [user.id, roomId]);
 
   const startPeer = async (rId, initiator = true) => {
     pc = new RTCPeerConnection();
     setInCall(true);
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     } catch (err) {
       console.error('getUserMedia failed', err);
       setInCall(false);
@@ -301,13 +325,18 @@ export default function Call1({ user, roomInfo, setPage }) {
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (e) => {
-      if (remoteVideo.current) remoteVideo.current.srcObject = e.streams[0];
+      remoteStream = e.streams[0];
+      if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('ice-candidate', { roomId: rId, candidate: event.candidate });
       }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE state:', pc.iceConnectionState);
     };
 
     if (initiator) {
@@ -317,13 +346,14 @@ export default function Call1({ user, roomInfo, setPage }) {
     }
 
     window.onbeforeunload = () => {
-      socket.emit('leave', { userId: user.id, roomId: rId });
+      leave();
     };
   };
 
   const leave = () => {
     if (pc) pc.close();
     pc = null;
+    iceQueue = [];
     if (roomId) socket.emit('leave', { userId: user.id, roomId });
     setInCall(false);
     setPartner(null);
@@ -334,17 +364,15 @@ export default function Call1({ user, roomInfo, setPage }) {
 
   const next = () => {
     leave();
-    if (setPage) setPage('connect'); // go to connect page for next random user
+    if (setPage) setPage('connect');
   };
 
-  // 🎤 Toggle Mute
   const toggleMute = () => {
     if (!localStream) return;
     localStream.getAudioTracks().forEach(track => (track.enabled = !track.enabled));
     setIsMuted(prev => !prev);
   };
 
-  // 📷 Toggle Video
   const toggleVideo = () => {
     if (!localStream) return;
     localStream.getVideoTracks().forEach(track => (track.enabled = !track.enabled));
@@ -365,12 +393,8 @@ export default function Call1({ user, roomInfo, setPage }) {
 
       {inCall && (
         <div style={styles.buttonGroup}>
-          <button style={styles.disconnectBtn} onClick={leave}>
-            Disconnect
-          </button>
-          <button style={styles.nextBtn} onClick={next}>
-            Next
-          </button>
+          <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
+          <button style={styles.nextBtn} onClick={next}>Next</button>
           <button
             style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
             onClick={toggleMute}
@@ -399,15 +423,8 @@ const styles = {
     backgroundColor: '#fff',
     textAlign: 'center',
   },
-  title: {
-    color: '#007BFF',
-    fontSize: 28,
-    marginBottom: 10,
-  },
-  partner: {
-    fontSize: 18,
-    marginBottom: 15,
-  },
+  title: { color: '#007BFF', fontSize: 28, marginBottom: 10 },
+  partner: { fontSize: 18, marginBottom: 15 },
   videoContainer: {
     display: 'flex',
     justifyContent: 'center',
@@ -415,50 +432,12 @@ const styles = {
     gap: 15,
     flexWrap: 'wrap',
   },
-  videoBox: {
-    width: '400px',
-    height: '300px',
-    borderRadius: 8,
-    background: '#000',
-    objectFit: 'cover',
-  },
-  status: {
-    marginTop: 15,
-    fontSize: 16,
-  },
-  buttonGroup: {
-    marginTop: 20,
-    display: 'flex',
-    justifyContent: 'center',
-    gap: 15,
-    flexWrap: 'wrap',
-  },
-  disconnectBtn: {
-    padding: '10px 25px',
-    fontSize: 16,
-    backgroundColor: '#dc3545',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-  },
-  nextBtn: {
-    padding: '10px 25px',
-    fontSize: 16,
-    backgroundColor: '#28a745',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-  },
-  circleBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: '50%',
-    border: 'none',
-    color: '#fff',
-    fontSize: 14,
-    cursor: 'pointer',
-  },
+  videoBox: { width: '400px', height: '300px', borderRadius: 8, background: '#000', objectFit: 'cover' },
+  status: { marginTop: 15, fontSize: 16 },
+  buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
+  disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
+
 
