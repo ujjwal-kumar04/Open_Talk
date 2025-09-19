@@ -250,7 +250,7 @@ export default function Call1({ user, setPage }) {
     // Mark user online
     socket.emit('iamonline', { userId: user.id });
 
-    // 🔹 Start searching for a partner automatically
+    // Start searching for a partner automatically
     socket.emit('findPartner', { userId: user.id });
 
     const onMatched = ({ roomId, partner }) => {
@@ -266,6 +266,7 @@ export default function Call1({ user, setPage }) {
       await pc.setLocalDescription(answer);
       socket.emit('answer', { roomId, answer });
 
+      // Add any queued ICE candidates
       iceQueue.forEach(async candidate => {
         try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
         catch (e) { console.error('Failed to add queued candidate', e); }
@@ -280,7 +281,11 @@ export default function Call1({ user, setPage }) {
     const onIceCandidate = async ({ candidate }) => {
       if (!candidate) return;
       if (pc && pc.remoteDescription) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error('Error adding ICE candidate', e);
+        }
       } else {
         iceQueue.push(candidate);
       }
@@ -304,7 +309,12 @@ export default function Call1({ user, setPage }) {
   }, [user.id, roomId]);
 
   const startPeer = async (rId, initiator = true) => {
-    pc = new RTCPeerConnection();
+    // ✅ Add STUN server
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    });
     setInCall(true);
 
     try {
@@ -315,12 +325,18 @@ export default function Call1({ user, setPage }) {
       return;
     }
 
+    // Local video
     if (localVideo.current) localVideo.current.srcObject = localStream;
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
-    pc.ontrack = (e) => {
-      remoteStream = e.streams[0];
-      if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+    // ✅ Fix: Proper remote stream handling
+    remoteStream = new MediaStream();
+    if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+
+    pc.ontrack = (event) => {
+      event.streams[0].getTracks().forEach(track => {
+        remoteStream.addTrack(track);
+      });
     };
 
     pc.onicecandidate = (event) => {
