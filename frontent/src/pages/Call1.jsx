@@ -234,7 +234,7 @@ import socket from '../socket';
 let pc;
 let localStream;
 let remoteStream;
-let iceQueue = []; // queue ICE candidates until remoteDescription set
+let iceQueue = [];
 
 export default function Call1({ user, setPage }) {
   const localVideo = useRef();
@@ -243,14 +243,16 @@ export default function Call1({ user, setPage }) {
   const [inCall, setInCall] = useState(false);
   const [partner, setPartner] = useState(null);
   const [roomId, setRoomId] = useState(null);
-
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
   useEffect(() => {
+    // Mark user online
     socket.emit('iamonline', { userId: user.id });
 
-    // matched event triggers peer start
+    // 🔹 Start searching for a partner automatically
+    socket.emit('findPartner', { userId: user.id });
+
     const onMatched = ({ roomId, partner }) => {
       setRoomId(roomId);
       setPartner(partner);
@@ -264,7 +266,6 @@ export default function Call1({ user, setPage }) {
       await pc.setLocalDescription(answer);
       socket.emit('answer', { roomId, answer });
 
-      // add any queued ICE candidates
       iceQueue.forEach(async candidate => {
         try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
         catch (e) { console.error('Failed to add queued candidate', e); }
@@ -273,19 +274,13 @@ export default function Call1({ user, setPage }) {
     };
 
     const onAnswer = async ({ answer }) => {
-      if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-      }
+      if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
     };
 
     const onIceCandidate = async ({ candidate }) => {
       if (!candidate) return;
       if (pc && pc.remoteDescription) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-          console.error('Error adding ICE candidate', e);
-        }
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } else {
         iceQueue.push(candidate);
       }
@@ -321,7 +316,6 @@ export default function Call1({ user, setPage }) {
     }
 
     if (localVideo.current) localVideo.current.srcObject = localStream;
-
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (e) => {
@@ -345,9 +339,7 @@ export default function Call1({ user, setPage }) {
       socket.emit('offer', { roomId: rId, offer });
     }
 
-    window.onbeforeunload = () => {
-      leave();
-    };
+    window.onbeforeunload = () => leave();
   };
 
   const leave = () => {
@@ -414,24 +406,10 @@ export default function Call1({ user, setPage }) {
 }
 
 const styles = {
-  container: {
-    maxWidth: 900,
-    margin: '30px auto',
-    padding: 20,
-    borderRadius: 10,
-    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-    backgroundColor: '#fff',
-    textAlign: 'center',
-  },
+  container: { maxWidth: 900, margin: '30px auto', padding: 20, borderRadius: 10, boxShadow: '0 4px 15px rgba(0,0,0,0.1)', backgroundColor: '#fff', textAlign: 'center' },
   title: { color: '#007BFF', fontSize: 28, marginBottom: 10 },
   partner: { fontSize: 18, marginBottom: 15 },
-  videoContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 15,
-    flexWrap: 'wrap',
-  },
+  videoContainer: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 15, flexWrap: 'wrap' },
   videoBox: { width: '400px', height: '300px', borderRadius: 8, background: '#000', objectFit: 'cover' },
   status: { marginTop: 15, fontSize: 16 },
   buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
@@ -439,5 +417,6 @@ const styles = {
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
+
 
 
