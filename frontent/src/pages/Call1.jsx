@@ -228,124 +228,216 @@
 //     cursor: 'pointer',
 //   },
 // };
-import React, { useEffect, useRef, useState } from "react";
-import socket from "../socket";
+import React, { useEffect, useRef, useState } from 'react';
+import socket from '../socket';
 
-let pc; // peer connection
+let pc;
+let localStream;
+let remoteStream;
+let iceQueue = []; // queue ICE candidates until remoteDescription set
 
-export default function Call1({ user, roomInfo, setPage }) {
+export default function Call1({ user, setPage }) {
   const localVideo = useRef();
   const remoteVideo = useRef();
+
   const [inCall, setInCall] = useState(false);
+  const [partner, setPartner] = useState(null);
   const [roomId, setRoomId] = useState(null);
 
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+
   useEffect(() => {
-    if (!roomInfo) return;
+    socket.emit('iamonline', { userId: user.id });
 
-    // create peer connection
-    pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" }
-      ]
-    });
-
-    // attach remote stream
-    pc.ontrack = (event) => {
-      console.log("✅ Remote track received:", event.streams[0]);
-      remoteVideo.current.srcObject = event.streams[0];
+    // matched event triggers peer start
+    const onMatched = ({ roomId, partner }) => {
+      setRoomId(roomId);
+      setPartner(partner);
+      startPeer(roomId, true);
     };
 
-    // send ICE candidates to backend
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice-candidate", {
-          roomId: roomInfo.roomId,
-          candidate: event.candidate
-        });
-      }
-    };
-
-    // get local media and add to pc
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.current.srcObject = stream;
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-      })
-      .catch(err => {
-        console.error("❌ Error accessing media devices:", err);
-      });
-
-    // listen for offer/answer/candidate
-    socket.on("offer", async (offer) => {
-      console.log("📩 Offer received");
+    const onOffer = async ({ offer }) => {
+      if (!pc) await startPeer(roomId, false);
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit("answer", { roomId: roomInfo.roomId, answer });
-    });
+      socket.emit('answer', { roomId, answer });
 
-    socket.on("answer", async (answer) => {
-      console.log("📩 Answer received");
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
-    });
+      // add any queued ICE candidates
+      iceQueue.forEach(async candidate => {
+        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+        catch (e) { console.error('Failed to add queued candidate', e); }
+      });
+      iceQueue = [];
+    };
 
-    socket.on("ice-candidate", async (candidate) => {
-      console.log("📩 ICE candidate received");
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("❌ Error adding ICE candidate:", err);
-      }
-    });
-
-    // if this client is the one who should create the offer
-    if (roomInfo.shouldCreateOffer) {
-      makeOffer(roomInfo.roomId);
-    }
-
-    setRoomId(roomInfo.roomId);
-    setInCall(true);
-
-    return () => {
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice-candidate");
+    const onAnswer = async ({ answer }) => {
       if (pc) {
-        pc.close();
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
       }
     };
-  }, [roomInfo]);
 
-  async function makeOffer(roomId) {
-    console.log("📤 Creating and sending offer");
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit("offer", { roomId, offer });
-  }
+    const onIceCandidate = async ({ candidate }) => {
+      if (!candidate) return;
+      if (pc && pc.remoteDescription) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error('Error adding ICE candidate', e);
+        }
+      } else {
+        iceQueue.push(candidate);
+      }
+    };
+
+    socket.on('matched', onMatched);
+    socket.on('offer', onOffer);
+    socket.on('answer', onAnswer);
+    socket.on('ice-candidate', onIceCandidate);
+
+    return () => {
+      if (pc) pc.close();
+      pc = null;
+      iceQueue = [];
+      socket.off('matched', onMatched);
+      socket.off('offer', onOffer);
+      socket.off('answer', onAnswer);
+      socket.off('ice-candidate', onIceCandidate);
+      window.onbeforeunload = null;
+    };
+  }, [user.id, roomId]);
+
+  const startPeer = async (rId, initiator = true) => {
+    pc = new RTCPeerConnection();
+    setInCall(true);
+
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (err) {
+      console.error('getUserMedia failed', err);
+      setInCall(false);
+      return;
+    }
+
+    if (localVideo.current) localVideo.current.srcObject = localStream;
+
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+    pc.ontrack = (e) => {
+      remoteStream = e.streams[0];
+      if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', { roomId: rId, candidate: event.candidate });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE state:', pc.iceConnectionState);
+    };
+
+    if (initiator) {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', { roomId: rId, offer });
+    }
+
+    window.onbeforeunload = () => {
+      leave();
+    };
+  };
+
+  const leave = () => {
+    if (pc) pc.close();
+    pc = null;
+    iceQueue = [];
+    if (roomId) socket.emit('leave', { userId: user.id, roomId });
+    setInCall(false);
+    setPartner(null);
+    setRoomId(null);
+    window.onbeforeunload = null;
+    if (setPage) setPage('profile');
+  };
+
+  const next = () => {
+    leave();
+    if (setPage) setPage('connect');
+  };
+
+  const toggleMute = () => {
+    if (!localStream) return;
+    localStream.getAudioTracks().forEach(track => (track.enabled = !track.enabled));
+    setIsMuted(prev => !prev);
+  };
+
+  const toggleVideo = () => {
+    if (!localStream) return;
+    localStream.getVideoTracks().forEach(track => (track.enabled = !track.enabled));
+    setIsVideoOff(prev => !prev);
+  };
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <h2 className="text-xl font-bold">Video Call</h2>
+    <div style={styles.container}>
+      <h2 style={styles.title}>Video Call</h2>
+      {partner && <p style={styles.partner}>Partner: {partner.username}</p>}
 
-      <video
-        ref={localVideo}
-        autoPlay
-        muted
-        playsInline
-        className="w-64 h-48 bg-black rounded"
-      ></video>
+      <div style={styles.videoContainer}>
+        <video ref={localVideo} autoPlay muted style={styles.videoBox} />
+        <video ref={remoteVideo} autoPlay style={styles.videoBox} />
+      </div>
 
-      <video
-        ref={remoteVideo}
-        autoPlay
-        playsInline
-        className="w-64 h-48 bg-black rounded"
-      ></video>
+      {!inCall && <p style={styles.status}>Waiting to join call...</p>}
 
-      {!inCall && <p>Waiting to join call...</p>}
+      {inCall && (
+        <div style={styles.buttonGroup}>
+          <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
+          <button style={styles.nextBtn} onClick={next}>Next</button>
+          <button
+            style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
+            onClick={toggleMute}
+          >
+            {isMuted ? 'Unmute' : 'Mute'}
+          </button>
+          <button
+            style={{ ...styles.circleBtn, backgroundColor: isVideoOff ? '#dc3545' : '#28a745' }}
+            onClick={toggleVideo}
+          >
+            {isVideoOff ? 'Video On' : 'Video Off'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
+const styles = {
+  container: {
+    maxWidth: 900,
+    margin: '30px auto',
+    padding: 20,
+    borderRadius: 10,
+    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+    backgroundColor: '#fff',
+    textAlign: 'center',
+  },
+  title: { color: '#007BFF', fontSize: 28, marginBottom: 10 },
+  partner: { fontSize: 18, marginBottom: 15 },
+  videoContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 15,
+    flexWrap: 'wrap',
+  },
+  videoBox: { width: '400px', height: '300px', borderRadius: 8, background: '#000', objectFit: 'cover' },
+  status: { marginTop: 15, fontSize: 16 },
+  buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
+  disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
+};
 
 

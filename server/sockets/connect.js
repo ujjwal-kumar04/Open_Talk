@@ -80,110 +80,80 @@
 //     });
 //   });
 // };
-
-
-const User = require("../models/User");
+const User = require('../models/User');
 
 let waitingUsers = [];
 
 module.exports = function setupSockets(io) {
-  io.on("connection", (socket) => {
-    console.log("🔌 Socket connected:", socket.id);
+  io.on('connection', (socket) => {
+    console.log('Socket connected', socket.id);
 
-    // user online
-    socket.on("iamonline", async ({ userId }) => {
+    socket.on('iamonline', async ({ userId }) => {
       try {
         if (!userId) return;
-        await User.findByIdAndUpdate(userId, {
-          online: true,
-          socketId: socket.id,
-        });
+        await User.findByIdAndUpdate(userId, { online: true, socketId: socket.id });
         socket.userId = userId;
-      } catch (err) {
-        console.error("❌ iamonline error:", err);
+      } catch (e) {
+        console.error(e);
       }
     });
 
-    // find a random partner
-    socket.on("findPartner", async ({ userId }) => {
+    socket.on('findPartner', async ({ userId }) => {
       try {
-        // remove if already in waiting
-        waitingUsers = waitingUsers.filter((w) => w.socket.id !== socket.id);
-
-        const candidateIndex = waitingUsers.findIndex(
-          (w) => w.userId !== userId
-        );
+        waitingUsers = waitingUsers.filter(w => w.socket.id !== socket.id);
+        const candidateIndex = waitingUsers.findIndex(w => w.userId !== userId);
 
         if (candidateIndex !== -1) {
           const partner = waitingUsers.splice(candidateIndex, 1)[0];
-          const roomId = socket.id + "#" + partner.socket.id;
+          const roomId = socket.id + '#' + partner.socket.id;
 
           socket.join(roomId);
           partner.socket.join(roomId);
 
-          // fetch profiles
-          const partnerProfile = await User.findById(partner.userId).select(
-            "-password"
-          );
-          const myProfile = await User.findById(userId).select("-password");
+          // send matched event after both joined
+          const partnerProfile = await User.findById(partner.userId).select('-password');
+          const myProfile = await User.findById(userId).select('-password');
 
-          // assign offer/answer roles
-          io.to(socket.id).emit("matched", {
-            roomId,
-            partner: partnerProfile,
-            me: myProfile,
-            shouldCreateOffer: true, // this user will create offer
-          });
+          io.to(socket.id).emit('matched', { roomId, partner: partnerProfile, me: myProfile });
+          io.to(partner.socket.id).emit('matched', { roomId, partner: myProfile, me: partnerProfile });
 
-          io.to(partner.socket.id).emit("matched", {
-            roomId,
-            partner: myProfile,
-            me: partnerProfile,
-            shouldCreateOffer: false, // this user will only answer
-          });
         } else {
           waitingUsers.push({ socket, userId });
-          io.to(socket.id).emit("waiting");
+          io.to(socket.id).emit('waiting');
         }
-      } catch (err) {
-        console.error("❌ findPartner error:", err);
+      } catch (e) {
+        console.error(e);
       }
     });
 
-    // signaling events
-    socket.on("offer", ({ roomId, offer }) => {
-      socket.to(roomId).emit("offer", { offer, from: socket.id });
+    // Robust forwarding for offer/answer/ice
+    socket.on('offer', ({ roomId, offer }) => {
+      socket.to(roomId).emit('offer', { offer, from: socket.id });
     });
 
-    socket.on("answer", ({ roomId, answer }) => {
-      socket.to(roomId).emit("answer", { answer, from: socket.id });
+    socket.on('answer', ({ roomId, answer }) => {
+      socket.to(roomId).emit('answer', { answer, from: socket.id });
     });
 
-    socket.on("ice-candidate", ({ roomId, candidate }) => {
-      socket.to(roomId).emit("ice-candidate", { candidate, from: socket.id });
+    socket.on('ice-candidate', ({ roomId, candidate }) => {
+      socket.to(roomId).emit('ice-candidate', { candidate, from: socket.id });
     });
 
-    // leave room
-    socket.on("leave", ({ roomId }) => {
+    socket.on('leave', ({ userId, roomId }) => {
       socket.leave(roomId);
     });
 
-    // disconnect
-    socket.on("disconnect", async () => {
+    socket.on('disconnect', async () => {
       try {
-        waitingUsers = waitingUsers.filter((w) => w.socket.id !== socket.id);
-
+        waitingUsers = waitingUsers.filter(w => w.socket.id !== socket.id);
         if (socket.userId) {
-          await User.findByIdAndUpdate(socket.userId, {
-            online: false,
-            socketId: null,
-          });
+          await User.findByIdAndUpdate(socket.userId, { online: false, socketId: null });
         }
-
-        console.log("❌ Socket disconnected:", socket.id);
-      } catch (err) {
-        console.error("❌ disconnect error:", err);
+        console.log('Socket disconnected', socket.id);
+      } catch (e) {
+        console.error(e);
       }
     });
   });
 };
+
