@@ -19,7 +19,7 @@ export default function Profile({ user, setUser, token }) {
     setLoading(true);
     try {
       const res = await axios.put(
-        `http://localhost:5000/profile/update/${user.id}`,
+        `https://open-talk-1.onrender.com/profile/update/${user.id}`,
         { username },
         { headers: { Authorization: token } }
       );

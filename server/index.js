@@ -15,7 +15,11 @@ const setupSockets = require('./sockets/connect');
 
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: "https://connecteas.netlify.app", 
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 app.use(express.json());
 
 

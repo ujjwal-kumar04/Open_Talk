@@ -15,7 +15,7 @@ export default function Register({ afterRegister }) {
     }
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/auth/register', { 
+      const res = await axios.post('https://open-talk-1.onrender.com/auth/register', { 
         username, password, gender 
       });
       afterRegister(res.data);

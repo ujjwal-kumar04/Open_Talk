@@ -13,7 +13,7 @@ export default function Login({ afterLogin }) {
     }
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/auth/login', { username, password });
+      const res = await axios.post('https://open-talk-1.onrender.com/auth/login', { username, password });
       afterLogin(res.data);
     } catch (e) {
       alert(e.response?.data?.msg || 'Error');
