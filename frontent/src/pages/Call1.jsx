@@ -314,7 +314,7 @@ export default function Call1({ user, setPage, roomInfo }) {
             <div style={styles.buttonGroup}>
               <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
               <button style={styles.nextBtn} onClick={next}>Next</button>
-              <button style={styles.restartBtn} onClick={restartConnection}>Fix Video</button>
+              
               <button
                 style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
                 onClick={toggleMute}
