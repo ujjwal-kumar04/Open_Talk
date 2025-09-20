@@ -228,7 +228,7 @@
 //     cursor: 'pointer',
 //   },
 // };
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import socket from '../socket';
 
 let pc;
@@ -251,17 +251,23 @@ export default function Call1({ user, setPage }) {
     socket.emit('iamonline', { userId: user.id });
 
     // matched event triggers peer start
-    const onMatched = ({ roomId, partner }) => {
-      setRoomId(roomId);
-      setPartner(partner);
-      startPeer(roomId, true);
+    const onMatched = ({ roomId: newRoomId, partner: newPartner }) => {
+      console.log('Matched event received:', { roomId: newRoomId, partner: newPartner });
+      setRoomId(newRoomId);
+      setPartner(newPartner);
+      startPeer(newRoomId, true);
     };
 
-    const onOffer = async ({ offer }) => {
-      if (!pc) await startPeer(roomId, false);
+    const onOffer = async ({ offer, from }) => {
+      console.log('Received offer from:', from, 'Current roomId:', roomId);
+      if (!pc) {
+        // If we don't have a peer connection yet, we're the receiver
+        await startPeer(roomId, false);
+      }
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      console.log('Sending answer back');
       socket.emit('answer', { roomId, answer });
 
       // add any queued ICE candidates
@@ -272,13 +278,15 @@ export default function Call1({ user, setPage }) {
       iceQueue = [];
     };
 
-    const onAnswer = async ({ answer }) => {
+    const onAnswer = async ({ answer, from }) => {
+      console.log('Received answer from:', from);
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
       }
     };
 
-    const onIceCandidate = async ({ candidate }) => {
+    const onIceCandidate = async ({ candidate, from }) => {
+      console.log('Received ICE candidate from:', from);
       if (!candidate) return;
       if (pc && pc.remoteDescription) {
         try {
@@ -309,11 +317,18 @@ export default function Call1({ user, setPage }) {
   }, [user.id, roomId]);
 
   const startPeer = async (rId, initiator = true) => {
-    pc = new RTCPeerConnection();
+    // Add STUN servers for better connectivity
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]
+    });
     setInCall(true);
 
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      console.log('Local stream acquired:', localStream.getTracks().map(t => t.kind));
     } catch (err) {
       console.error('getUserMedia failed', err);
       setInCall(false);
@@ -325,8 +340,13 @@ export default function Call1({ user, setPage }) {
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (e) => {
+      console.log('Received remote track:', e.track.kind);
+      console.log('Remote streams:', e.streams);
       remoteStream = e.streams[0];
-      if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+      if (remoteVideo.current && remoteStream) {
+        remoteVideo.current.srcObject = remoteStream;
+        console.log('Remote video set successfully');
+      }
     };
 
     pc.onicecandidate = (event) => {
@@ -336,12 +356,24 @@ export default function Call1({ user, setPage }) {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE state:', pc.iceConnectionState);
+      console.log('ICE connection state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        console.log('ICE connection failed, trying to restart');
+        pc.restartIce();
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('Connection state:', pc.connectionState);
     };
 
     if (initiator) {
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
       await pc.setLocalDescription(offer);
+      console.log('Created and set local offer');
       socket.emit('offer', { roomId: rId, offer });
     }
 
@@ -379,14 +411,21 @@ export default function Call1({ user, setPage }) {
     setIsVideoOff(prev => !prev);
   };
 
+  const restartConnection = () => {
+    console.log('Manually restarting connection...');
+    if (pc) {
+      pc.restartIce();
+    }
+  };
+
   return (
     <div style={styles.container}>
       <h2 style={styles.title}>Video Call</h2>
       {partner && <p style={styles.partner}>Partner: {partner.username}</p>}
 
       <div style={styles.videoContainer}>
-        <video ref={localVideo} autoPlay muted style={styles.videoBox} />
-        <video ref={remoteVideo} autoPlay style={styles.videoBox} />
+        <video ref={localVideo} autoPlay muted playsInline style={styles.videoBox} />
+        <video ref={remoteVideo} autoPlay playsInline style={styles.videoBox} />
       </div>
 
       {!inCall && <p style={styles.status}>Waiting to join call...</p>}
@@ -395,6 +434,7 @@ export default function Call1({ user, setPage }) {
         <div style={styles.buttonGroup}>
           <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
           <button style={styles.nextBtn} onClick={next}>Next</button>
+          <button style={styles.restartBtn} onClick={restartConnection}>Restart Connection</button>
           <button
             style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
             onClick={toggleMute}
@@ -437,6 +477,7 @@ const styles = {
   buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
   disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  restartBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#ffc107', color: '#000', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
 
