@@ -32,48 +32,38 @@ export default function Call1({ user, setPage, roomInfo }) {
       setRoomId(newRoomId);
       setPartner(newPartner);
       startPeer(newRoomId, true);
+      
+      // Auto restart connection after 3 seconds to ensure proper video connection
+      setTimeout(() => {
+        console.log('Auto-restarting connection for better video quality...');
+        restartConnection();
+      }, 3000);
     };
 
     const onOffer = async ({ offer, from }) => {
-      console.log('Received offer from:', from, 'Current roomId:', roomId);
-      
-      // Ensure we have a room ID before proceeding
       const currentRoomId = roomId || roomInfo?.roomId;
-      if (!currentRoomId) {
-        console.error('No room ID available to handle offer');
-        return;
-      }
+      if (!currentRoomId) return;
       
       if (!pc) {
-        console.log('Creating peer connection as receiver');
         await startPeer(currentRoomId, false);
       }
       
       try {
-        console.log('Setting remote description with offer');
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        console.log('Remote description set successfully');
         
-        console.log('Creating answer');
         const answer = await pc.createAnswer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: true
         });
         
-        console.log('Setting local description with answer');
         await pc.setLocalDescription(answer);
-        console.log('Local description set successfully');
-        
-        console.log('Sending answer back to room:', currentRoomId);
         socket.emit('answer', { roomId: currentRoomId, answer });
 
-        // add any queued ICE candidates
+        // Process queued ICE candidates
         if (iceQueue.length > 0) {
-          console.log('Processing queued ICE candidates:', iceQueue.length);
           iceQueue.forEach(async candidate => {
             try { 
               await pc.addIceCandidate(new RTCIceCandidate(candidate)); 
-              console.log('Added queued ICE candidate');
             }
             catch (e) { console.error('Failed to add queued candidate', e); }
           });
@@ -85,31 +75,18 @@ export default function Call1({ user, setPage, roomInfo }) {
     };
 
     const onAnswer = async ({ answer, from }) => {
-      console.log('Received answer from:', from);
-      console.log('PC state:', pc?.signalingState);
-      
-      if (!pc) {
-        console.error('No peer connection available to handle answer');
-        return;
-      }
-      
-      if (pc.signalingState !== 'have-local-offer') {
-        console.log('PC not in correct state for answer. Current state:', pc.signalingState);
+      if (!pc || pc.signalingState !== 'have-local-offer') {
         return;
       }
       
       try {
-        console.log('Setting remote description with answer');
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        console.log('Remote answer set successfully');
         
         // Process any queued ICE candidates
         if (iceQueue.length > 0) {
-          console.log('Processing queued ICE candidates after answer:', iceQueue.length);
           iceQueue.forEach(async candidate => {
             try { 
               await pc.addIceCandidate(new RTCIceCandidate(candidate)); 
-              console.log('Added queued ICE candidate after answer');
             }
             catch (e) { console.error('Failed to add queued candidate after answer', e); }
           });
@@ -121,25 +98,16 @@ export default function Call1({ user, setPage, roomInfo }) {
     };
 
     const onIceCandidate = async ({ candidate, from }) => {
-      console.log('Received ICE candidate from:', from);
-      console.log('Candidate type:', candidate?.candidate?.includes('typ') ? candidate.candidate.split('typ ')[1]?.split(' ')[0] : 'unknown');
-      
-      if (!candidate) {
-        console.log('End of ICE candidates');
-        return;
-      }
+      if (!candidate) return;
       
       if (pc && pc.remoteDescription && pc.remoteDescription.type) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log('ICE candidate added successfully');
         } catch (e) {
           console.error('Error adding ICE candidate:', e);
         }
       } else {
-        console.log('Queueing ICE candidate - remote description not set yet');
         iceQueue.push(candidate);
-        console.log('ICE queue length:', iceQueue.length);
       }
     };
 
@@ -184,34 +152,21 @@ export default function Call1({ user, setPage, roomInfo }) {
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (e) => {
-      console.log('=== ONTRACK EVENT ===');
-      console.log('Track kind:', e.track.kind);
-      console.log('Track readyState:', e.track.readyState);
-      console.log('Track enabled:', e.track.enabled);
-      console.log('Streams count:', e.streams.length);
-      console.log('Stream ID:', e.streams[0]?.id);
+      console.log('Remote track received:', e.track.kind);
       
       if (e.streams && e.streams[0]) {
         remoteStream = e.streams[0];
-        console.log('Remote stream tracks:', remoteStream.getTracks().map(t => `${t.kind}: ${t.readyState}`));
         
         if (remoteVideo.current) {
-          console.log('Setting remote video srcObject');
           remoteVideo.current.srcObject = remoteStream;
           
           // Force video to play
           setTimeout(() => {
-            remoteVideo.current.play().then(() => {
-              console.log('Remote video playing successfully');
-            }).catch(err => {
+            remoteVideo.current.play().catch(err => {
               console.error('Error playing remote video:', err);
             });
           }, 100);
-        } else {
-          console.error('Remote video element not available');
         }
-      } else {
-        console.error('No streams in ontrack event');
       }
     };
 
@@ -277,51 +232,7 @@ export default function Call1({ user, setPage, roomInfo }) {
     setIsVideoOff(prev => !prev);
   };
 
-  const checkConnections = () => {
-    console.log('=== CONNECTION DEBUG INFO ===');
-    console.log('Room ID:', roomId);
-    console.log('Partner:', partner?.username);
-    console.log('PC exists:', !!pc);
-    
-    if (pc) {
-      console.log('PC connection state:', pc.connectionState);
-      console.log('PC ICE connection state:', pc.iceConnectionState);
-      console.log('PC ICE gathering state:', pc.iceGatheringState);
-      console.log('PC signaling state:', pc.signalingState);
-      console.log('PC local description:', !!pc.localDescription);
-      console.log('PC remote description:', !!pc.remoteDescription);
-    }
-    
-    console.log('Local stream exists:', !!localStream);
-    console.log('Local stream tracks:', localStream?.getTracks().map(t => `${t.kind}: ${t.readyState}`) || 'none');
-    console.log('Remote stream exists:', !!remoteStream);
-    console.log('Remote stream tracks:', remoteStream?.getTracks().map(t => `${t.kind}: ${t.readyState}`) || 'none');
-    
-    console.log('Local video element srcObject:', !!localVideo.current?.srcObject);
-    console.log('Remote video element srcObject:', !!remoteVideo.current?.srcObject);
-    console.log('Remote video element paused:', remoteVideo.current?.paused);
-    console.log('Remote video element readyState:', remoteVideo.current?.readyState);
-    
-    console.log('ICE queue length:', iceQueue.length);
-    console.log('=== END DEBUG INFO ===');
-  };
-
-  const forcePlayRemoteVideo = () => {
-    console.log('Forcing remote video to play...');
-    if (remoteVideo.current && remoteVideo.current.srcObject) {
-      remoteVideo.current.play().then(() => {
-        console.log('Remote video forced to play successfully');
-      }).catch(err => {
-        console.error('Error forcing remote video to play:', err);
-      });
-    } else {
-      console.log('Remote video element or srcObject not available');
-    }
-  };
-
   const restartConnection = async () => {
-    console.log('Manually restarting entire connection...');
-    
     // Clean up existing connection
     if (pc) {
       pc.close();
@@ -331,10 +242,7 @@ export default function Call1({ user, setPage, roomInfo }) {
     
     // Restart peer connection
     if (roomId && partner) {
-      console.log('Restarting peer connection...');
       await startPeer(roomId, true);
-    } else {
-      console.log('No room or partner info available for restart');
     }
   };
 
@@ -379,9 +287,6 @@ export default function Call1({ user, setPage, roomInfo }) {
             <div style={styles.buttonGroup}>
               <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
               <button style={styles.nextBtn} onClick={next}>Next</button>
-              <button style={styles.restartBtn} onClick={restartConnection}>Restart Connection</button>
-              <button style={styles.debugBtn} onClick={checkConnections}>Debug Info</button>
-              <button style={styles.playBtn} onClick={forcePlayRemoteVideo}>Force Play Remote</button>
               <button
                 style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
                 onClick={toggleMute}
@@ -426,9 +331,6 @@ const styles = {
   buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
   disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  restartBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#ffc107', color: '#000', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  debugBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#6f42c1', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  playBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#fd7e14', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
 
