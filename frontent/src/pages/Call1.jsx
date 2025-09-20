@@ -1,233 +1,4 @@
-// import React, { useEffect, useRef, useState } from 'react';
-// import socket from '../socket';
 
-// let pc;
-// let localStream; // 🔹 keep reference of local stream
-
-// export default function Call1({ user, roomInfo, setPage }) {
-//   const localVideo = useRef();
-//   const remoteVideo = useRef();
-//   const [inCall, setInCall] = useState(false);
-//   const [partner, setPartner] = useState(roomInfo.partner || null);
-//   const [roomId, setRoomId] = useState(roomInfo.roomId || null);
-
-//   const [isMuted, setIsMuted] = useState(false);
-//   const [isVideoOff, setIsVideoOff] = useState(false);
-
-//   useEffect(() => {
-//     socket.emit('iamonline', { userId: user.id });
-
-//     if (roomId && partner) {
-//       startPeer(roomId).catch(console.error);
-//     }
-
-//     const onOffer = async (offer) => {
-//       if (!pc) await startPeer(roomId, false);
-//       await pc.setRemoteDescription(offer);
-//       const answer = await pc.createAnswer();
-//       await pc.setLocalDescription(answer);
-//       socket.emit('answer', { roomId, answer });
-//     };
-
-//     const onAnswer = async (answer) => {
-//       if (pc) await pc.setRemoteDescription(answer);
-//     };
-
-//     const onIceCandidate = async (candidate) => {
-//       if (pc) await pc.addIceCandidate(candidate);
-//     };
-
-//     socket.on('offer', onOffer);
-//     socket.on('answer', onAnswer);
-//     socket.on('ice-candidate', onIceCandidate);
-
-//     return () => {
-//       if (pc) pc.close();
-//       pc = null;
-//       socket.off('offer', onOffer);
-//       socket.off('answer', onAnswer);
-//       socket.off('ice-candidate', onIceCandidate);
-//       window.onbeforeunload = null;
-//     };
-//   }, [roomId, partner]);
-
-//   const startPeer = async (rId, initiator = true) => {
-//     pc = new RTCPeerConnection();
-//     setInCall(true);
-
-//     try {
-//       localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-//     } catch (err) {
-//       console.error('getUserMedia failed', err);
-//       setInCall(false);
-//       return;
-//     }
-
-//     if (localVideo.current) localVideo.current.srcObject = localStream;
-
-//     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-//     pc.ontrack = (e) => {
-//       if (remoteVideo.current) remoteVideo.current.srcObject = e.streams[0];
-//     };
-
-//     pc.onicecandidate = (event) => {
-//       if (event.candidate) {
-//         socket.emit('ice-candidate', { roomId: rId, candidate: event.candidate });
-//       }
-//     };
-
-//     if (initiator) {
-//       const offer = await pc.createOffer();
-//       await pc.setLocalDescription(offer);
-//       socket.emit('offer', { roomId: rId, offer });
-//     }
-
-//     window.onbeforeunload = () => {
-//       socket.emit('leave', { userId: user.id, roomId: rId });
-//     };
-//   };
-
-//   const leave = () => {
-//     if (pc) pc.close();
-//     pc = null;
-//     if (roomId) socket.emit('leave', { userId: user.id, roomId });
-//     setInCall(false);
-//     setPartner(null);
-//     setRoomId(null);
-//     window.onbeforeunload = null;
-//     if (setPage) setPage('profile');
-//   };
-
-//   const next = () => {
-//     leave();
-//     if (setPage) setPage('connect'); // go to connect page for next random user
-//   };
-
-//   // 🎤 Toggle Mute
-//   const toggleMute = () => {
-//     if (!localStream) return;
-//     localStream.getAudioTracks().forEach(track => (track.enabled = !track.enabled));
-//     setIsMuted(prev => !prev);
-//   };
-
-//   // 📷 Toggle Video
-//   const toggleVideo = () => {
-//     if (!localStream) return;
-//     localStream.getVideoTracks().forEach(track => (track.enabled = !track.enabled));
-//     setIsVideoOff(prev => !prev);
-//   };
-
-//   return (
-//     <div style={styles.container}>
-//       <h2 style={styles.title}>Video Call</h2>
-//       {partner && <p style={styles.partner}>Partner: {partner.username}</p>}
-
-//       <div style={styles.videoContainer}>
-//         <video ref={localVideo} autoPlay muted style={styles.videoBox} />
-//         <video ref={remoteVideo} autoPlay style={styles.videoBox} />
-//       </div>
-
-//       {!inCall && <p style={styles.status}>Waiting to join call...</p>}
-
-//       {inCall && (
-//         <div style={styles.buttonGroup}>
-//           <button style={styles.disconnectBtn} onClick={leave}>
-//             Disconnect
-//           </button>
-//           <button style={styles.nextBtn} onClick={next}>
-//             Next
-//           </button>
-//           <button
-//             style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
-//             onClick={toggleMute}
-//           >
-//             {isMuted ? 'Unmute' : 'Mute'}
-//           </button>
-//           <button
-//             style={{ ...styles.circleBtn, backgroundColor: isVideoOff ? '#dc3545' : '#28a745' }}
-//             onClick={toggleVideo}
-//           >
-//             {isVideoOff ? 'Video On' : 'Video Off'}
-//           </button>
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
-// const styles = {
-//   container: {
-//     maxWidth: 900,
-//     margin: '30px auto',
-//     padding: 20,
-//     borderRadius: 10,
-//     boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-//     backgroundColor: '#fff',
-//     textAlign: 'center',
-//   },
-//   title: {
-//     color: '#007BFF',
-//     fontSize: 28,
-//     marginBottom: 10,
-//   },
-//   partner: {
-//     fontSize: 18,
-//     marginBottom: 15,
-//   },
-//   videoContainer: {
-//     display: 'flex',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     gap: 15,
-//     flexWrap: 'wrap',
-//   },
-//   videoBox: {
-//     width: '400px',
-//     height: '300px',
-//     borderRadius: 8,
-//     background: '#000',
-//     objectFit: 'cover',
-//   },
-//   status: {
-//     marginTop: 15,
-//     fontSize: 16,
-//   },
-//   buttonGroup: {
-//     marginTop: 20,
-//     display: 'flex',
-//     justifyContent: 'center',
-//     gap: 15,
-//     flexWrap: 'wrap',
-//   },
-//   disconnectBtn: {
-//     padding: '10px 25px',
-//     fontSize: 16,
-//     backgroundColor: '#dc3545',
-//     color: '#fff',
-//     border: 'none',
-//     borderRadius: 6,
-//     cursor: 'pointer',
-//   },
-//   nextBtn: {
-//     padding: '10px 25px',
-//     fontSize: 16,
-//     backgroundColor: '#28a745',
-//     color: '#fff',
-//     border: 'none',
-//     borderRadius: 6,
-//     cursor: 'pointer',
-//   },
-//   circleBtn: {
-//     width: 60,
-//     height: 60,
-//     borderRadius: '50%',
-//     border: 'none',
-//     color: '#fff',
-//     fontSize: 14,
-//     cursor: 'pointer',
-//   },
-// };
 import { useEffect, useRef, useState } from 'react';
 import socket from '../socket';
 
@@ -267,26 +38,42 @@ export default function Call1({ user, setPage, roomInfo }) {
       console.log('Received offer from:', from, 'Current roomId:', roomId);
       if (!pc) {
         // If we don't have a peer connection yet, we're the receiver
-        await startPeer(roomId, false);
+        console.log('Creating peer connection as receiver');
+        await startPeer(roomId || roomInfo?.roomId, false);
       }
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      console.log('Sending answer back');
-      socket.emit('answer', { roomId, answer });
+      
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        console.log('Set remote description successfully');
+        
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        console.log('Created and set local answer');
+        
+        socket.emit('answer', { roomId: roomId || roomInfo?.roomId, answer });
 
-      // add any queued ICE candidates
-      iceQueue.forEach(async candidate => {
-        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
-        catch (e) { console.error('Failed to add queued candidate', e); }
-      });
-      iceQueue = [];
+        // add any queued ICE candidates
+        iceQueue.forEach(async candidate => {
+          try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+          catch (e) { console.error('Failed to add queued candidate', e); }
+        });
+        iceQueue = [];
+      } catch (err) {
+        console.error('Error handling offer:', err);
+      }
     };
 
     const onAnswer = async ({ answer, from }) => {
       console.log('Received answer from:', from);
-      if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      if (pc && pc.signalingState !== 'stable') {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          console.log('Set remote answer successfully');
+        } catch (err) {
+          console.error('Error setting remote answer:', err);
+        }
+      } else {
+        console.log('PC not ready or already stable');
       }
     };
 
@@ -347,10 +134,19 @@ export default function Call1({ user, setPage, roomInfo }) {
     pc.ontrack = (e) => {
       console.log('Received remote track:', e.track.kind);
       console.log('Remote streams:', e.streams);
-      remoteStream = e.streams[0];
-      if (remoteVideo.current && remoteStream) {
-        remoteVideo.current.srcObject = remoteStream;
-        console.log('Remote video set successfully');
+      console.log('Track readyState:', e.track.readyState);
+      
+      if (e.streams && e.streams[0]) {
+        remoteStream = e.streams[0];
+        if (remoteVideo.current) {
+          remoteVideo.current.srcObject = remoteStream;
+          console.log('Remote video set successfully');
+          
+          // Force play the remote video
+          remoteVideo.current.play().catch(err => {
+            console.error('Error playing remote video:', err);
+          });
+        }
       }
     };
 
@@ -416,10 +212,37 @@ export default function Call1({ user, setPage, roomInfo }) {
     setIsVideoOff(prev => !prev);
   };
 
-  const restartConnection = () => {
-    console.log('Manually restarting connection...');
+  const checkConnections = () => {
+    console.log('=== Connection Debug Info ===');
+    console.log('Room ID:', roomId);
+    console.log('Partner:', partner);
+    console.log('PC exists:', !!pc);
+    console.log('PC state:', pc?.connectionState);
+    console.log('ICE state:', pc?.iceConnectionState);
+    console.log('Signaling state:', pc?.signalingState);
+    console.log('Local stream:', !!localStream);
+    console.log('Remote stream:', !!remoteStream);
+    console.log('Local video srcObject:', !!localVideo.current?.srcObject);
+    console.log('Remote video srcObject:', !!remoteVideo.current?.srcObject);
+    console.log('ICE queue length:', iceQueue.length);
+  };
+
+  const restartConnection = async () => {
+    console.log('Manually restarting entire connection...');
+    
+    // Clean up existing connection
     if (pc) {
-      pc.restartIce();
+      pc.close();
+      pc = null;
+    }
+    iceQueue = [];
+    
+    // Restart peer connection
+    if (roomId && partner) {
+      console.log('Restarting peer connection...');
+      await startPeer(roomId, true);
+    } else {
+      console.log('No room or partner info available for restart');
     }
   };
 
@@ -440,8 +263,22 @@ export default function Call1({ user, setPage, roomInfo }) {
       {(partner && roomId) && (
         <>
           <div style={styles.videoContainer}>
-            <video ref={localVideo} autoPlay muted playsInline style={styles.videoBox} />
-            <video ref={remoteVideo} autoPlay playsInline style={styles.videoBox} />
+            <video 
+              ref={localVideo} 
+              autoPlay 
+              muted 
+              playsInline 
+              style={styles.videoBox}
+              onLoadedMetadata={() => console.log('Local video metadata loaded')}
+            />
+            <video 
+              ref={remoteVideo} 
+              autoPlay 
+              playsInline 
+              style={styles.videoBox}
+              onLoadedMetadata={() => console.log('Remote video metadata loaded')}
+              onCanPlay={() => console.log('Remote video can play')}
+            />
           </div>
 
           {!inCall && <p style={styles.status}>Waiting to join call...</p>}
@@ -451,6 +288,7 @@ export default function Call1({ user, setPage, roomInfo }) {
               <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
               <button style={styles.nextBtn} onClick={next}>Next</button>
               <button style={styles.restartBtn} onClick={restartConnection}>Restart Connection</button>
+              <button style={styles.debugBtn} onClick={checkConnections}>Debug Info</button>
               <button
                 style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
                 onClick={toggleMute}
@@ -496,6 +334,7 @@ const styles = {
   disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   restartBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#ffc107', color: '#000', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  debugBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#6f42c1', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
 
