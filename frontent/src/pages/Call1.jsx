@@ -31,13 +31,9 @@ export default function Call1({ user, setPage, roomInfo }) {
       console.log('Matched event received:', { roomId: newRoomId, partner: newPartner });
       setRoomId(newRoomId);
       setPartner(newPartner);
-      startPeer(newRoomId, true);
       
-      // Auto restart connection after 3 seconds to ensure proper video connection
-      setTimeout(() => {
-        console.log('Auto-restarting connection for better video quality...');
-        restartConnection();
-      }, 3000);
+      // Start as initiator first
+      startPeer(newRoomId, true);
     };
 
     const onOffer = async ({ offer, from }) => {
@@ -152,20 +148,24 @@ export default function Call1({ user, setPage, roomInfo }) {
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (e) => {
-      console.log('Remote track received:', e.track.kind);
+      console.log('Remote track received:', e.track.kind, 'readyState:', e.track.readyState);
       
       if (e.streams && e.streams[0]) {
         remoteStream = e.streams[0];
+        console.log('Remote stream tracks:', remoteStream.getTracks().length);
         
         if (remoteVideo.current) {
           remoteVideo.current.srcObject = remoteStream;
+          console.log('Remote video source set');
           
-          // Force video to play
-          setTimeout(() => {
-            remoteVideo.current.play().catch(err => {
+          // Ensure video plays
+          remoteVideo.current.onloadedmetadata = () => {
+            remoteVideo.current.play().then(() => {
+              console.log('Remote video playing successfully');
+            }).catch(err => {
               console.error('Error playing remote video:', err);
             });
-          }, 100);
+          };
         }
       }
     };
@@ -178,24 +178,51 @@ export default function Call1({ user, setPage, roomInfo }) {
 
     pc.oniceconnectionstatechange = () => {
       console.log('ICE connection state:', pc.iceConnectionState);
+      
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        console.log('ICE connection established successfully');
+      }
+      
       if (pc.iceConnectionState === 'failed') {
-        console.log('ICE connection failed, trying to restart');
-        pc.restartIce();
+        console.log('ICE connection failed, restarting...');
+        setTimeout(() => restartConnection(), 1000);
+      }
+      
+      if (pc.iceConnectionState === 'disconnected') {
+        console.log('ICE connection disconnected, trying to reconnect...');
+        setTimeout(() => restartConnection(), 2000);
       }
     };
 
     pc.onconnectionstatechange = () => {
       console.log('Connection state:', pc.connectionState);
+      
+      // Auto restart if no remote video after connection is established
+      if (pc.connectionState === 'connected') {
+        setTimeout(() => {
+          if (!remoteVideo.current?.srcObject || remoteVideo.current?.videoWidth === 0) {
+            console.log('No remote video detected, restarting connection...');
+            restartConnection();
+          }
+        }, 3000);
+      }
     };
 
     if (initiator) {
-      const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
-      await pc.setLocalDescription(offer);
-      console.log('Created and set local offer');
-      socket.emit('offer', { roomId: rId, offer });
+      // Wait a bit before creating offer to ensure everything is setup
+      setTimeout(async () => {
+        try {
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true
+          });
+          await pc.setLocalDescription(offer);
+          console.log('Created and set local offer');
+          socket.emit('offer', { roomId: rId, offer });
+        } catch (err) {
+          console.error('Error creating offer:', err);
+        }
+      }, 500);
     }
 
     window.onbeforeunload = () => {
@@ -287,6 +314,7 @@ export default function Call1({ user, setPage, roomInfo }) {
             <div style={styles.buttonGroup}>
               <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
               <button style={styles.nextBtn} onClick={next}>Next</button>
+              <button style={styles.restartBtn} onClick={restartConnection}>Fix Video</button>
               <button
                 style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
                 onClick={toggleMute}
@@ -331,6 +359,7 @@ const styles = {
   buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
   disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  restartBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#ffc107', color: '#000', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
 
