@@ -236,19 +236,24 @@ let localStream;
 let remoteStream;
 let iceQueue = []; // queue ICE candidates until remoteDescription set
 
-export default function Call1({ user, setPage }) {
+export default function Call1({ user, setPage, roomInfo }) {
   const localVideo = useRef();
   const remoteVideo = useRef();
 
   const [inCall, setInCall] = useState(false);
-  const [partner, setPartner] = useState(null);
-  const [roomId, setRoomId] = useState(null);
+  const [partner, setPartner] = useState(roomInfo?.partner || null);
+  const [roomId, setRoomId] = useState(roomInfo?.roomId || null);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
   useEffect(() => {
     socket.emit('iamonline', { userId: user.id });
+
+    // If we already have roomInfo, start peer connection
+    if (roomId && partner) {
+      startPeer(roomId, true);
+    }
 
     // matched event triggers peer start
     const onMatched = ({ roomId: newRoomId, partner: newPartner }) => {
@@ -314,7 +319,7 @@ export default function Call1({ user, setPage }) {
       socket.off('ice-candidate', onIceCandidate);
       window.onbeforeunload = null;
     };
-  }, [user.id, roomId]);
+  }, [user.id, roomId]); // Add roomId dependency
 
   const startPeer = async (rId, initiator = true) => {
     // Add STUN servers for better connectivity
@@ -422,32 +427,45 @@ export default function Call1({ user, setPage }) {
     <div style={styles.container}>
       <h2 style={styles.title}>Video Call</h2>
       {partner && <p style={styles.partner}>Partner: {partner.username}</p>}
-
-      <div style={styles.videoContainer}>
-        <video ref={localVideo} autoPlay muted playsInline style={styles.videoBox} />
-        <video ref={remoteVideo} autoPlay playsInline style={styles.videoBox} />
-      </div>
-
-      {!inCall && <p style={styles.status}>Waiting to join call...</p>}
-
-      {inCall && (
-        <div style={styles.buttonGroup}>
-          <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
-          <button style={styles.nextBtn} onClick={next}>Next</button>
-          <button style={styles.restartBtn} onClick={restartConnection}>Restart Connection</button>
-          <button
-            style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
-            onClick={toggleMute}
-          >
-            {isMuted ? 'Unmute' : 'Mute'}
-          </button>
-          <button
-            style={{ ...styles.circleBtn, backgroundColor: isVideoOff ? '#dc3545' : '#28a745' }}
-            onClick={toggleVideo}
-          >
-            {isVideoOff ? 'Video On' : 'Video Off'}
+      
+      {!partner && !roomId && (
+        <div>
+          <p style={styles.status}>No partner found. Please go back to connect.</p>
+          <button style={styles.disconnectBtn} onClick={() => setPage('connect')}>
+            Back to Connect
           </button>
         </div>
+      )}
+
+      {(partner && roomId) && (
+        <>
+          <div style={styles.videoContainer}>
+            <video ref={localVideo} autoPlay muted playsInline style={styles.videoBox} />
+            <video ref={remoteVideo} autoPlay playsInline style={styles.videoBox} />
+          </div>
+
+          {!inCall && <p style={styles.status}>Waiting to join call...</p>}
+
+          {inCall && (
+            <div style={styles.buttonGroup}>
+              <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
+              <button style={styles.nextBtn} onClick={next}>Next</button>
+              <button style={styles.restartBtn} onClick={restartConnection}>Restart Connection</button>
+              <button
+                style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
+                onClick={toggleMute}
+              >
+                {isMuted ? 'Unmute' : 'Mute'}
+              </button>
+              <button
+                style={{ ...styles.circleBtn, backgroundColor: isVideoOff ? '#dc3545' : '#28a745' }}
+                onClick={toggleVideo}
+              >
+                {isVideoOff ? 'Video On' : 'Video Off'}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

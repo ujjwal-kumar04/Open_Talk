@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import socket from '../socket';
 
 export default function Connect({ user, token, setPage, setRoomInfo }) {
@@ -16,8 +16,10 @@ export default function Connect({ user, token, setPage, setRoomInfo }) {
       setRoomId(roomId);
       setRoomInfo({ roomId, partner });
 
-      // ✅ Jaise hi partner mile, directly Call page par bhej do
-      setTimeout(() => setPage('call'), 500);
+      // Only redirect to call page when actually matched with partner
+      if (partner && roomId) {
+        setTimeout(() => setPage('call'), 500);
+      }
     };
 
     socket.on('waiting', onWaiting);
@@ -41,12 +43,12 @@ export default function Connect({ user, token, setPage, setRoomInfo }) {
     setRoomId(null);
   };
 
-  // ✅ Agar component mount hote hi auto-start chahiye
-  useEffect(() => {
-    if (status === 'idle') {
-      start(); // automatically search start kare
-    }
-  }, [status]);
+  // Remove auto-start - let user manually start
+  // useEffect(() => {
+  //   if (status === 'idle') {
+  //     start(); // automatically search start kare
+  //   }
+  // }, [status]);
 
   return (
     <div style={styles.container}>
