@@ -36,28 +36,49 @@ export default function Call1({ user, setPage, roomInfo }) {
 
     const onOffer = async ({ offer, from }) => {
       console.log('Received offer from:', from, 'Current roomId:', roomId);
+      
+      // Ensure we have a room ID before proceeding
+      const currentRoomId = roomId || roomInfo?.roomId;
+      if (!currentRoomId) {
+        console.error('No room ID available to handle offer');
+        return;
+      }
+      
       if (!pc) {
-        // If we don't have a peer connection yet, we're the receiver
         console.log('Creating peer connection as receiver');
-        await startPeer(roomId || roomInfo?.roomId, false);
+        await startPeer(currentRoomId, false);
       }
       
       try {
+        console.log('Setting remote description with offer');
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        console.log('Set remote description successfully');
+        console.log('Remote description set successfully');
         
-        const answer = await pc.createAnswer();
+        console.log('Creating answer');
+        const answer = await pc.createAnswer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
+        
+        console.log('Setting local description with answer');
         await pc.setLocalDescription(answer);
-        console.log('Created and set local answer');
+        console.log('Local description set successfully');
         
-        socket.emit('answer', { roomId: roomId || roomInfo?.roomId, answer });
+        console.log('Sending answer back to room:', currentRoomId);
+        socket.emit('answer', { roomId: currentRoomId, answer });
 
         // add any queued ICE candidates
-        iceQueue.forEach(async candidate => {
-          try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
-          catch (e) { console.error('Failed to add queued candidate', e); }
-        });
-        iceQueue = [];
+        if (iceQueue.length > 0) {
+          console.log('Processing queued ICE candidates:', iceQueue.length);
+          iceQueue.forEach(async candidate => {
+            try { 
+              await pc.addIceCandidate(new RTCIceCandidate(candidate)); 
+              console.log('Added queued ICE candidate');
+            }
+            catch (e) { console.error('Failed to add queued candidate', e); }
+          });
+          iceQueue = [];
+        }
       } catch (err) {
         console.error('Error handling offer:', err);
       }
@@ -65,29 +86,60 @@ export default function Call1({ user, setPage, roomInfo }) {
 
     const onAnswer = async ({ answer, from }) => {
       console.log('Received answer from:', from);
-      if (pc && pc.signalingState !== 'stable') {
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(answer));
-          console.log('Set remote answer successfully');
-        } catch (err) {
-          console.error('Error setting remote answer:', err);
+      console.log('PC state:', pc?.signalingState);
+      
+      if (!pc) {
+        console.error('No peer connection available to handle answer');
+        return;
+      }
+      
+      if (pc.signalingState !== 'have-local-offer') {
+        console.log('PC not in correct state for answer. Current state:', pc.signalingState);
+        return;
+      }
+      
+      try {
+        console.log('Setting remote description with answer');
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log('Remote answer set successfully');
+        
+        // Process any queued ICE candidates
+        if (iceQueue.length > 0) {
+          console.log('Processing queued ICE candidates after answer:', iceQueue.length);
+          iceQueue.forEach(async candidate => {
+            try { 
+              await pc.addIceCandidate(new RTCIceCandidate(candidate)); 
+              console.log('Added queued ICE candidate after answer');
+            }
+            catch (e) { console.error('Failed to add queued candidate after answer', e); }
+          });
+          iceQueue = [];
         }
-      } else {
-        console.log('PC not ready or already stable');
+      } catch (err) {
+        console.error('Error setting remote answer:', err);
       }
     };
 
     const onIceCandidate = async ({ candidate, from }) => {
       console.log('Received ICE candidate from:', from);
-      if (!candidate) return;
-      if (pc && pc.remoteDescription) {
+      console.log('Candidate type:', candidate?.candidate?.includes('typ') ? candidate.candidate.split('typ ')[1]?.split(' ')[0] : 'unknown');
+      
+      if (!candidate) {
+        console.log('End of ICE candidates');
+        return;
+      }
+      
+      if (pc && pc.remoteDescription && pc.remoteDescription.type) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('ICE candidate added successfully');
         } catch (e) {
-          console.error('Error adding ICE candidate', e);
+          console.error('Error adding ICE candidate:', e);
         }
       } else {
+        console.log('Queueing ICE candidate - remote description not set yet');
         iceQueue.push(candidate);
+        console.log('ICE queue length:', iceQueue.length);
       }
     };
 
@@ -132,21 +184,34 @@ export default function Call1({ user, setPage, roomInfo }) {
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (e) => {
-      console.log('Received remote track:', e.track.kind);
-      console.log('Remote streams:', e.streams);
+      console.log('=== ONTRACK EVENT ===');
+      console.log('Track kind:', e.track.kind);
       console.log('Track readyState:', e.track.readyState);
+      console.log('Track enabled:', e.track.enabled);
+      console.log('Streams count:', e.streams.length);
+      console.log('Stream ID:', e.streams[0]?.id);
       
       if (e.streams && e.streams[0]) {
         remoteStream = e.streams[0];
+        console.log('Remote stream tracks:', remoteStream.getTracks().map(t => `${t.kind}: ${t.readyState}`));
+        
         if (remoteVideo.current) {
+          console.log('Setting remote video srcObject');
           remoteVideo.current.srcObject = remoteStream;
-          console.log('Remote video set successfully');
           
-          // Force play the remote video
-          remoteVideo.current.play().catch(err => {
-            console.error('Error playing remote video:', err);
-          });
+          // Force video to play
+          setTimeout(() => {
+            remoteVideo.current.play().then(() => {
+              console.log('Remote video playing successfully');
+            }).catch(err => {
+              console.error('Error playing remote video:', err);
+            });
+          }, 100);
+        } else {
+          console.error('Remote video element not available');
         }
+      } else {
+        console.error('No streams in ontrack event');
       }
     };
 
@@ -213,18 +278,45 @@ export default function Call1({ user, setPage, roomInfo }) {
   };
 
   const checkConnections = () => {
-    console.log('=== Connection Debug Info ===');
+    console.log('=== CONNECTION DEBUG INFO ===');
     console.log('Room ID:', roomId);
-    console.log('Partner:', partner);
+    console.log('Partner:', partner?.username);
     console.log('PC exists:', !!pc);
-    console.log('PC state:', pc?.connectionState);
-    console.log('ICE state:', pc?.iceConnectionState);
-    console.log('Signaling state:', pc?.signalingState);
-    console.log('Local stream:', !!localStream);
-    console.log('Remote stream:', !!remoteStream);
-    console.log('Local video srcObject:', !!localVideo.current?.srcObject);
-    console.log('Remote video srcObject:', !!remoteVideo.current?.srcObject);
+    
+    if (pc) {
+      console.log('PC connection state:', pc.connectionState);
+      console.log('PC ICE connection state:', pc.iceConnectionState);
+      console.log('PC ICE gathering state:', pc.iceGatheringState);
+      console.log('PC signaling state:', pc.signalingState);
+      console.log('PC local description:', !!pc.localDescription);
+      console.log('PC remote description:', !!pc.remoteDescription);
+    }
+    
+    console.log('Local stream exists:', !!localStream);
+    console.log('Local stream tracks:', localStream?.getTracks().map(t => `${t.kind}: ${t.readyState}`) || 'none');
+    console.log('Remote stream exists:', !!remoteStream);
+    console.log('Remote stream tracks:', remoteStream?.getTracks().map(t => `${t.kind}: ${t.readyState}`) || 'none');
+    
+    console.log('Local video element srcObject:', !!localVideo.current?.srcObject);
+    console.log('Remote video element srcObject:', !!remoteVideo.current?.srcObject);
+    console.log('Remote video element paused:', remoteVideo.current?.paused);
+    console.log('Remote video element readyState:', remoteVideo.current?.readyState);
+    
     console.log('ICE queue length:', iceQueue.length);
+    console.log('=== END DEBUG INFO ===');
+  };
+
+  const forcePlayRemoteVideo = () => {
+    console.log('Forcing remote video to play...');
+    if (remoteVideo.current && remoteVideo.current.srcObject) {
+      remoteVideo.current.play().then(() => {
+        console.log('Remote video forced to play successfully');
+      }).catch(err => {
+        console.error('Error forcing remote video to play:', err);
+      });
+    } else {
+      console.log('Remote video element or srcObject not available');
+    }
   };
 
   const restartConnection = async () => {
@@ -289,6 +381,7 @@ export default function Call1({ user, setPage, roomInfo }) {
               <button style={styles.nextBtn} onClick={next}>Next</button>
               <button style={styles.restartBtn} onClick={restartConnection}>Restart Connection</button>
               <button style={styles.debugBtn} onClick={checkConnections}>Debug Info</button>
+              <button style={styles.playBtn} onClick={forcePlayRemoteVideo}>Force Play Remote</button>
               <button
                 style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
                 onClick={toggleMute}
@@ -335,6 +428,7 @@ const styles = {
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   restartBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#ffc107', color: '#000', border: 'none', borderRadius: 6, cursor: 'pointer' },
   debugBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#6f42c1', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
+  playBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#fd7e14', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
 
