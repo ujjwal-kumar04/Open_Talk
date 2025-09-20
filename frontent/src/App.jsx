@@ -45,7 +45,7 @@ function App() {
   };
 
   return (
-    <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: 100%, margin: '0 auto' }}>
       {/* Header */}
       <header style={styles.header}>
         <h1 style={styles.logo}>OpenTalk - Voice</h1>
