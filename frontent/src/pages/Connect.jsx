@@ -55,6 +55,10 @@ export default function Connect({ user, token, setPage, setRoomInfo }) {
       <h2 style={styles.title}>Connect</h2>
       <p style={styles.status}><strong>Status:</strong> {status}</p>
 
+      {status === 'idle' && (
+        <button style={styles.button} onClick={start}>Start Searching</button>
+      )}
+
       {(status === 'waiting' || status === 'searching') && (
         <button style={{ ...styles.button, backgroundColor: '#dc3545' }} onClick={stop}>Cancel</button>
       )}
