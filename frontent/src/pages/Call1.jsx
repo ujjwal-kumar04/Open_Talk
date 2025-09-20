@@ -14,9 +14,20 @@ export default function Call1({ user, setPage, roomInfo }) {
   const [inCall, setInCall] = useState(false);
   const [partner, setPartner] = useState(roomInfo?.partner || null);
   const [roomId, setRoomId] = useState(roomInfo?.roomId || null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+
+  // Handle responsive design
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     socket.emit('iamonline', { userId: user.id });
@@ -107,10 +118,26 @@ export default function Call1({ user, setPage, roomInfo }) {
       }
     };
 
+    const onUserLeft = ({ userId }) => {
+      console.log('Partner left the call');
+      // Clean up and go back to connect page
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      iceQueue = [];
+      setInCall(false);
+      setPartner(null);
+      setRoomId(null);
+      alert('Your partner left the call');
+      setPage('connect');
+    };
+
     socket.on('matched', onMatched);
     socket.on('offer', onOffer);
     socket.on('answer', onAnswer);
     socket.on('ice-candidate', onIceCandidate);
+    socket.on('user-left', onUserLeft);
 
     return () => {
       if (pc) pc.close();
@@ -120,6 +147,7 @@ export default function Call1({ user, setPage, roomInfo }) {
       socket.off('offer', onOffer);
       socket.off('answer', onAnswer);
       socket.off('ice-candidate', onIceCandidate);
+      socket.off('user-left', onUserLeft);
       window.onbeforeunload = null;
     };
   }, [user.id, roomId]); // Add roomId dependency
@@ -190,7 +218,7 @@ export default function Call1({ user, setPage, roomInfo }) {
       
       if (pc.iceConnectionState === 'disconnected') {
         console.log('ICE connection disconnected, trying to reconnect...');
-        setTimeout(() => restartConnection(), 2000);
+        setTimeout(() => restartConnection(), 1000); // Reduced from 2000ms
       }
     };
 
@@ -204,7 +232,7 @@ export default function Call1({ user, setPage, roomInfo }) {
             console.log('No remote video detected, restarting connection...');
             restartConnection();
           }
-        }, 3000);
+        }, 1500); // Reduced from 3000ms to 1500ms
       }
     };
 
@@ -274,9 +302,19 @@ export default function Call1({ user, setPage, roomInfo }) {
   };
 
   return (
-    <div style={styles.container}>
-      <h2 style={styles.title}>Video Call</h2>
-      {partner && <p style={styles.partner}>Partner: {partner.username}</p>}
+    <div style={{
+      ...styles.container,
+      margin: isMobile ? '10px' : '20px auto',
+      padding: isMobile ? '10px' : '15px',
+    }}>
+      <h2 style={{
+        ...styles.title,
+        fontSize: isMobile ? '20px' : '24px',
+      }}>Video Call</h2>
+      {partner && <p style={{
+        ...styles.partner,
+        fontSize: isMobile ? '14px' : '16px',
+      }}>Partner: {partner.username}</p>}
       
       {!partner && !roomId && (
         <div>
@@ -289,39 +327,80 @@ export default function Call1({ user, setPage, roomInfo }) {
 
       {(partner && roomId) && (
         <>
-          <div style={styles.videoContainer}>
+          <div style={{
+            ...styles.videoContainer,
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: isMobile ? 10 : 15,
+          }}>
             <video 
               ref={localVideo} 
               autoPlay 
               muted 
               playsInline 
-              style={styles.videoBox}
+              style={{
+                ...styles.videoBox,
+                width: isMobile ? '100%' : '350px',
+                maxWidth: isMobile ? '300px' : '350px',
+                height: isMobile ? '200px' : '260px',
+              }}
               onLoadedMetadata={() => console.log('Local video metadata loaded')}
             />
             <video 
               ref={remoteVideo} 
               autoPlay 
               playsInline 
-              style={styles.videoBox}
+              style={{
+                ...styles.videoBox,
+                width: isMobile ? '100%' : '350px',
+                maxWidth: isMobile ? '300px' : '350px',
+                height: isMobile ? '200px' : '260px',
+              }}
               onLoadedMetadata={() => console.log('Remote video metadata loaded')}
               onCanPlay={() => console.log('Remote video can play')}
             />
           </div>
 
-          {!inCall && <p style={styles.status}>Waiting to join call...</p>}
+          {!inCall && <p style={{
+            ...styles.status,
+            fontSize: isMobile ? '12px' : '14px',
+          }}>Waiting to join call...</p>}
 
           {inCall && (
-            <div style={styles.buttonGroup}>
-              <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
-              <button style={styles.nextBtn} onClick={next}>Next</button>
+            <div style={{
+              ...styles.buttonGroup,
+              gap: isMobile ? 8 : 10,
+              marginTop: isMobile ? 15 : 20,
+            }}>
+              <button style={{
+                ...styles.disconnectBtn,
+                padding: isMobile ? '6px 15px' : '8px 20px',
+                fontSize: isMobile ? '12px' : '14px',
+              }} onClick={leave}>Disconnect</button>
+              <button style={{
+                ...styles.nextBtn,
+                padding: isMobile ? '6px 15px' : '8px 20px',
+                fontSize: isMobile ? '12px' : '14px',
+              }} onClick={next}>Next</button>
               <button
-                style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
+                style={{
+                  ...styles.circleBtn,
+                  width: isMobile ? 45 : 50,
+                  height: isMobile ? 45 : 50,
+                  fontSize: isMobile ? '10px' : '12px',
+                  backgroundColor: isMuted ? '#dc3545' : '#007BFF'
+                }}
                 onClick={toggleMute}
               >
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
               <button
-                style={{ ...styles.circleBtn, backgroundColor: isVideoOff ? '#dc3545' : '#28a745' }}
+                style={{
+                  ...styles.circleBtn,
+                  width: isMobile ? 45 : 50,
+                  height: isMobile ? 45 : 50,
+                  fontSize: isMobile ? '10px' : '12px',
+                  backgroundColor: isVideoOff ? '#dc3545' : '#28a745'
+                }}
                 onClick={toggleVideo}
               >
                 {isVideoOff ? 'Video On' : 'Video Off'}
@@ -337,28 +416,57 @@ export default function Call1({ user, setPage, roomInfo }) {
 const styles = {
   container: {
     maxWidth: 900,
-    margin: '30px auto',
-    padding: 20,
-    borderRadius: 10,
-    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
     backgroundColor: '#fff',
     textAlign: 'center',
+    borderRadius: 10,
+    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
   },
-  title: { color: '#007BFF', fontSize: 28, marginBottom: 10 },
-  partner: { fontSize: 18, marginBottom: 15 },
+  title: { 
+    color: '#007BFF', 
+    marginBottom: 10,
+  },
+  partner: { 
+    marginBottom: 15,
+  },
   videoContainer: {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 15,
     flexWrap: 'wrap',
   },
-  videoBox: { width: '400px', height: '300px', borderRadius: 8, background: '#000', objectFit: 'cover' },
-  status: { marginTop: 15, fontSize: 16 },
-  buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
-  disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
+  videoBox: { 
+    borderRadius: 8, 
+    background: '#000', 
+    objectFit: 'cover',
+  },
+  status: { 
+    marginTop: 15, 
+  },
+  buttonGroup: { 
+    display: 'flex', 
+    justifyContent: 'center', 
+    flexWrap: 'wrap',
+  },
+  disconnectBtn: { 
+    backgroundColor: '#dc3545', 
+    color: '#fff', 
+    border: 'none', 
+    borderRadius: 6, 
+    cursor: 'pointer',
+  },
+  nextBtn: { 
+    backgroundColor: '#28a745', 
+    color: '#fff', 
+    border: 'none', 
+    borderRadius: 6, 
+    cursor: 'pointer',
+  },
+  circleBtn: { 
+    borderRadius: '50%', 
+    border: 'none', 
+    color: '#fff', 
+    cursor: 'pointer',
+  },
 };
 
 

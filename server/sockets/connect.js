@@ -140,7 +140,10 @@ module.exports = function setupSockets(io) {
     });
 
     socket.on('leave', ({ userId, roomId }) => {
+      console.log('User leaving room:', userId, roomId);
       socket.leave(roomId);
+      // Notify other users in the room that this user left
+      socket.to(roomId).emit('user-left', { userId });
     });
 
     socket.on('disconnect', async () => {
