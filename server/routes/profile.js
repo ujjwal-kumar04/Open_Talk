@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 
-// Get profile
 router.get('/:id', async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('-password');
@@ -13,7 +12,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Update profile
 router.put('/update/:id', async (req, res) => {
   try {
     const { username } = req.body;

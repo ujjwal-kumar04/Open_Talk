@@ -6,7 +6,6 @@ const User = require('../models/User');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'replace_this_with_a_strong_secret';
 
-// Register
 router.post('/register', async (req, res) => {
   try {
     const { username, password, gender } = req.body;
@@ -14,7 +13,6 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ msg: 'Missing fields' });
     }
 
-    // Check gender is valid
     if (!['male', 'female', 'other'].includes(gender)) {
       return res.status(400).json({ msg: 'Invalid gender value' });
     }
@@ -38,7 +36,6 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;

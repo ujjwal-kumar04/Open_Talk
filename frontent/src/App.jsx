@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import Register from './pages/Register';
+import { useEffect, useState } from 'react';
+import Call1 from './pages/Call1';
+import Connect from './pages/Connect';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
-import Connect from './pages/Connect';
-import Call1 from './pages/Call1';
-import socket from './socket';
+import Register from './pages/Register';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -34,7 +33,6 @@ function App() {
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: 900, margin: '0 auto' }}>
-      {/* Header */}
       <header style={styles.header}>
         <h1 style={styles.logo}>OpenTalk - Voice</h1>
         <div style={styles.nav}>
@@ -54,7 +52,6 @@ function App() {
         </div>
       </header>
 
-      {/* Page content */}
       <main style={{ padding: 20 }}>
         {page === 'register' && <Register afterRegister={handleLogin} />}
         {page === 'login' && <Login afterLogin={handleLogin} />}
@@ -70,7 +67,6 @@ function App() {
 
 export default App;
 
-// ---- Styles ----
 const styles = {
   header: {
     display: 'flex',

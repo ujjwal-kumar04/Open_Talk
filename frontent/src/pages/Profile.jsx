@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useEffect, useState } from 'react';
 
 export default function Profile({ user, setUser, token }) {
   const [username, setUsername] = useState(user?.username || '');
@@ -76,7 +76,6 @@ export default function Profile({ user, setUser, token }) {
   );
 }
 
-// Inline styles for simplicity
 const styles = {
   container: {
     maxWidth: 500,

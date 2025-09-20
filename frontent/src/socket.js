@@ -1,5 +1,5 @@
-// src/socket.js
-import { io } from "socket.io-client";
+import { io } from 'socket.io-client';
+src/socket.js
 
 const socket = io("https://open-talk-1.onrender.com", {
   transports: ["websocket"],

@@ -16,7 +16,6 @@ export default function Connect({ user, token, setPage, setRoomInfo }) {
       setRoomId(roomId);
       setRoomInfo({ roomId, partner });
 
-      // Only redirect to call page when actually matched with partner
       if (partner && roomId) {
         setTimeout(() => setPage('call'), 500);
       }
@@ -42,13 +41,6 @@ export default function Connect({ user, token, setPage, setRoomInfo }) {
     setPartner(null);
     setRoomId(null);
   };
-
-  // Remove auto-start - let user manually start
-  // useEffect(() => {
-  //   if (status === 'idle') {
-  //     start(); // automatically search start kare
-  //   }
-  // }, [status]);
 
   return (
     <div style={styles.container}>
