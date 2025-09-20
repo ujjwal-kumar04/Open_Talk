@@ -5,7 +5,7 @@ import socket from '../socket';
 let pc;
 let localStream;
 let remoteStream;
-let iceQueue = []; // queue ICE candidates until remoteDescription set
+let iceQueue = [];
 
 export default function Call1({ user, setPage, roomInfo }) {
   const localVideo = useRef();
@@ -15,11 +15,9 @@ export default function Call1({ user, setPage, roomInfo }) {
   const [partner, setPartner] = useState(roomInfo?.partner || null);
   const [roomId, setRoomId] = useState(roomInfo?.roomId || null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
-  // Handle responsive design
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= 768);
@@ -32,18 +30,13 @@ export default function Call1({ user, setPage, roomInfo }) {
   useEffect(() => {
     socket.emit('iamonline', { userId: user.id });
 
-    // If we already have roomInfo, start peer connection
     if (roomId && partner) {
       startPeer(roomId, true);
     }
 
-    // matched event triggers peer start
     const onMatched = ({ roomId: newRoomId, partner: newPartner }) => {
-      console.log('Matched event received:', { roomId: newRoomId, partner: newPartner });
       setRoomId(newRoomId);
       setPartner(newPartner);
-      
-      // Start as initiator first
       startPeer(newRoomId, true);
     };
 
@@ -66,7 +59,6 @@ export default function Call1({ user, setPage, roomInfo }) {
         await pc.setLocalDescription(answer);
         socket.emit('answer', { roomId: currentRoomId, answer });
 
-        // Process queued ICE candidates
         if (iceQueue.length > 0) {
           iceQueue.forEach(async candidate => {
             try { 
@@ -89,7 +81,6 @@ export default function Call1({ user, setPage, roomInfo }) {
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
         
-        // Process any queued ICE candidates
         if (iceQueue.length > 0) {
           iceQueue.forEach(async candidate => {
             try { 
@@ -119,8 +110,6 @@ export default function Call1({ user, setPage, roomInfo }) {
     };
 
     const onUserLeft = ({ userId }) => {
-      console.log('Partner left the call');
-      // Clean up and go back to connect page
       if (pc) {
         pc.close();
         pc = null;
@@ -150,10 +139,9 @@ export default function Call1({ user, setPage, roomInfo }) {
       socket.off('user-left', onUserLeft);
       window.onbeforeunload = null;
     };
-  }, [user.id, roomId]); // Add roomId dependency
+  }, [user.id, roomId]);
 
   const startPeer = async (rId, initiator = true) => {
-    // Add STUN servers for better connectivity
     pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -164,7 +152,6 @@ export default function Call1({ user, setPage, roomInfo }) {
 
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      console.log('Local stream acquired:', localStream.getTracks().map(t => t.kind));
     } catch (err) {
       console.error('getUserMedia failed', err);
       setInCall(false);
@@ -175,22 +162,15 @@ export default function Call1({ user, setPage, roomInfo }) {
 
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
-    pc.ontrack = (e) => {
-      console.log('Remote track received:', e.track.kind, 'readyState:', e.track.readyState);
-      
+    pc.ontrack = (e) => {      
       if (e.streams && e.streams[0]) {
         remoteStream = e.streams[0];
-        console.log('Remote stream tracks:', remoteStream.getTracks().length);
         
         if (remoteVideo.current) {
           remoteVideo.current.srcObject = remoteStream;
-          console.log('Remote video source set');
           
-          // Ensure video plays
           remoteVideo.current.onloadedmetadata = () => {
-            remoteVideo.current.play().then(() => {
-              console.log('Remote video playing successfully');
-            }).catch(err => {
+            remoteVideo.current.play().catch(err => {
               console.error('Error playing remote video:', err);
             });
           };
@@ -205,39 +185,30 @@ export default function Call1({ user, setPage, roomInfo }) {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', pc.iceConnectionState);
-      
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         console.log('ICE connection established successfully');
       }
       
       if (pc.iceConnectionState === 'failed') {
-        console.log('ICE connection failed, restarting...');
         setTimeout(() => restartConnection(), 1000);
       }
       
       if (pc.iceConnectionState === 'disconnected') {
-        console.log('ICE connection disconnected, trying to reconnect...');
-        setTimeout(() => restartConnection(), 1000); // Reduced from 2000ms
+        setTimeout(() => restartConnection(), 1000);
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('Connection state:', pc.connectionState);
-      
-      // Auto restart if no remote video after connection is established
       if (pc.connectionState === 'connected') {
         setTimeout(() => {
           if (!remoteVideo.current?.srcObject || remoteVideo.current?.videoWidth === 0) {
-            console.log('No remote video detected, restarting connection...');
             restartConnection();
           }
-        }, 1500); // Reduced from 3000ms to 1500ms
+        }, 1500);
       }
     };
 
     if (initiator) {
-      // Wait a bit before creating offer to ensure everything is setup
       setTimeout(async () => {
         try {
           const offer = await pc.createOffer({
@@ -245,7 +216,6 @@ export default function Call1({ user, setPage, roomInfo }) {
             offerToReceiveVideo: true
           });
           await pc.setLocalDescription(offer);
-          console.log('Created and set local offer');
           socket.emit('offer', { roomId: rId, offer });
         } catch (err) {
           console.error('Error creating offer:', err);
@@ -267,12 +237,12 @@ export default function Call1({ user, setPage, roomInfo }) {
     setPartner(null);
     setRoomId(null);
     window.onbeforeunload = null;
-    if (setPage) setPage('profile');
+    setPage('profile');
   };
 
   const next = () => {
     leave();
-    if (setPage) setPage('connect');
+    setPage('connect');
   };
 
   const toggleMute = () => {
@@ -288,14 +258,12 @@ export default function Call1({ user, setPage, roomInfo }) {
   };
 
   const restartConnection = async () => {
-    // Clean up existing connection
     if (pc) {
       pc.close();
       pc = null;
     }
     iceQueue = [];
     
-    // Restart peer connection
     if (roomId && partner) {
       await startPeer(roomId, true);
     }
@@ -305,22 +273,40 @@ export default function Call1({ user, setPage, roomInfo }) {
     <div style={{
       ...styles.container,
       margin: isMobile ? '10px' : '20px auto',
-      padding: isMobile ? '10px' : '15px',
+      padding: isMobile ? '15px' : '25px',
     }}>
-      <h2 style={{
-        ...styles.title,
-        fontSize: isMobile ? '20px' : '24px',
-      }}>Video Call</h2>
-      {partner && <p style={{
-        ...styles.partner,
-        fontSize: isMobile ? '14px' : '16px',
-      }}>Partner: {partner.username}</p>}
+      <div style={styles.header}>
+        <h1 style={{
+          ...styles.title,
+          fontSize: isMobile ? '24px' : '32px',
+        }}>🎥 Video Call</h1>
+        {partner && (
+          <div style={styles.partnerInfo}>
+            <div style={styles.partnerAvatar}>
+              {partner.username.charAt(0).toUpperCase()}
+            </div>
+            <p style={{
+              ...styles.partnerName,
+              fontSize: isMobile ? '16px' : '18px',
+            }}>
+              Connected with <strong>{partner.username}</strong>
+            </p>
+          </div>
+        )}
+      </div>
       
       {!partner && !roomId && (
-        <div>
-          <p style={styles.status}>No partner found. Please go back to connect.</p>
-          <button style={styles.disconnectBtn} onClick={() => setPage('connect')}>
-            Back to Connect
+        <div style={styles.noPartnerContainer}>
+          <div style={styles.noPartnerIcon}>🔍</div>
+          <p style={styles.noPartnerText}>No partner found</p>
+          <button 
+            style={{
+              ...styles.primaryBtn,
+              padding: isMobile ? '12px 24px' : '14px 28px',
+            }} 
+            onClick={() => setPage('connect')}
+          >
+            🔄 Back to Connect
           </button>
         </div>
       )}
@@ -330,80 +316,110 @@ export default function Call1({ user, setPage, roomInfo }) {
           <div style={{
             ...styles.videoContainer,
             flexDirection: isMobile ? 'column' : 'row',
-            gap: isMobile ? 10 : 15,
+            gap: isMobile ? '15px' : '20px',
           }}>
-            <video 
-              ref={localVideo} 
-              autoPlay 
-              muted 
-              playsInline 
-              style={{
-                ...styles.videoBox,
-                width: isMobile ? '100%' : '350px',
-                maxWidth: isMobile ? '300px' : '350px',
-                height: isMobile ? '200px' : '260px',
-              }}
-              onLoadedMetadata={() => console.log('Local video metadata loaded')}
-            />
-            <video 
-              ref={remoteVideo} 
-              autoPlay 
-              playsInline 
-              style={{
-                ...styles.videoBox,
-                width: isMobile ? '100%' : '350px',
-                maxWidth: isMobile ? '300px' : '350px',
-                height: isMobile ? '200px' : '260px',
-              }}
-              onLoadedMetadata={() => console.log('Remote video metadata loaded')}
-              onCanPlay={() => console.log('Remote video can play')}
-            />
+            <div style={styles.videoWrapper}>
+              <video 
+                ref={localVideo} 
+                autoPlay 
+                muted 
+                playsInline 
+                style={{
+                  ...styles.videoBox,
+                  width: isMobile ? '100%' : '350px',
+                  height: isMobile ? '220px' : '280px',
+                }}
+              />
+              <div style={styles.videoLabel}>
+                <span style={styles.videoLabelText}>You</span>
+              </div>
+            </div>
+            
+            <div style={styles.videoWrapper}>
+              <video 
+                ref={remoteVideo} 
+                autoPlay 
+                playsInline 
+                style={{
+                  ...styles.videoBox,
+                  width: isMobile ? '100%' : '350px',
+                  height: isMobile ? '220px' : '280px',
+                }}
+              />
+              <div style={styles.videoLabel}>
+                <span style={styles.videoLabelText}>{partner.username}</span>
+              </div>
+            </div>
           </div>
 
-          {!inCall && <p style={{
-            ...styles.status,
-            fontSize: isMobile ? '12px' : '14px',
-          }}>Waiting to join call...</p>}
+          {!inCall && (
+            <div style={styles.connectingContainer}>
+              <div style={styles.loader}></div>
+              <p style={{
+                ...styles.connectingText,
+                fontSize: isMobile ? '14px' : '16px',
+              }}>
+                🔄 Connecting to call...
+              </p>
+            </div>
+          )}
 
           {inCall && (
             <div style={{
-              ...styles.buttonGroup,
-              gap: isMobile ? 8 : 10,
-              marginTop: isMobile ? 15 : 20,
+              ...styles.controlsContainer,
+              gap: isMobile ? '12px' : '16px',
+              marginTop: isMobile ? '20px' : '25px',
             }}>
-              <button style={{
-                ...styles.disconnectBtn,
-                padding: isMobile ? '6px 15px' : '8px 20px',
-                fontSize: isMobile ? '12px' : '14px',
-              }} onClick={leave}>Disconnect</button>
-              <button style={{
-                ...styles.nextBtn,
-                padding: isMobile ? '6px 15px' : '8px 20px',
-                fontSize: isMobile ? '12px' : '14px',
-              }} onClick={next}>Next</button>
+              <button 
+                style={{
+                  ...styles.actionBtn,
+                  ...styles.disconnectBtn,
+                  padding: isMobile ? '10px 20px' : '12px 24px',
+                  fontSize: isMobile ? '14px' : '16px',
+                }} 
+                onClick={leave}
+              >
+                📞 End Call
+              </button>
+              
+              <button 
+                style={{
+                  ...styles.actionBtn,
+                  ...styles.nextBtn,
+                  padding: isMobile ? '10px 20px' : '12px 24px',
+                  fontSize: isMobile ? '14px' : '16px',
+                }} 
+                onClick={next}
+              >
+                ⏭️ Next
+              </button>
+              
               <button
                 style={{
                   ...styles.circleBtn,
-                  width: isMobile ? 45 : 50,
-                  height: isMobile ? 45 : 50,
-                  fontSize: isMobile ? '10px' : '12px',
-                  backgroundColor: isMuted ? '#dc3545' : '#007BFF'
+                  width: isMobile ? '50px' : '60px',
+                  height: isMobile ? '50px' : '60px',
+                  fontSize: isMobile ? '18px' : '20px',
+                  backgroundColor: isMuted ? '#e74c3c' : '#3498db',
+                  boxShadow: isMuted ? '0 4px 15px rgba(231, 76, 60, 0.3)' : '0 4px 15px rgba(52, 152, 219, 0.3)',
                 }}
                 onClick={toggleMute}
               >
-                {isMuted ? 'Unmute' : 'Mute'}
+                {isMuted ? '🔇' : '🎤'}
               </button>
+              
               <button
                 style={{
                   ...styles.circleBtn,
-                  width: isMobile ? 45 : 50,
-                  height: isMobile ? 45 : 50,
-                  fontSize: isMobile ? '10px' : '12px',
-                  backgroundColor: isVideoOff ? '#dc3545' : '#28a745'
+                  width: isMobile ? '50px' : '60px',
+                  height: isMobile ? '50px' : '60px',
+                  fontSize: isMobile ? '18px' : '20px',
+                  backgroundColor: isVideoOff ? '#e74c3c' : '#27ae60',
+                  boxShadow: isVideoOff ? '0 4px 15px rgba(231, 76, 60, 0.3)' : '0 4px 15px rgba(39, 174, 96, 0.3)',
                 }}
                 onClick={toggleVideo}
               >
-                {isVideoOff ? 'Video On' : 'Video Off'}
+                {isVideoOff ? '📹' : '🎥'}
               </button>
             </div>
           )}
@@ -415,58 +431,176 @@ export default function Call1({ user, setPage, roomInfo }) {
 
 const styles = {
   container: {
-    maxWidth: 900,
-    backgroundColor: '#fff',
+    maxWidth: '1000px',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    borderRadius: '20px',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+    color: '#fff',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  header: {
     textAlign: 'center',
-    borderRadius: 10,
-    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+    marginBottom: '25px',
   },
-  title: { 
-    color: '#007BFF', 
-    marginBottom: 10,
+  title: {
+    background: 'linear-gradient(45deg, #fff, #f8f9fa)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+    fontWeight: 'bold',
+    margin: '0 0 15px 0',
+    textShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
-  partner: { 
-    marginBottom: 15,
+  partnerInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: '15px',
+    padding: '10px 20px',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255,255,255,0.2)',
+  },
+  partnerAvatar: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    backgroundColor: '#fff',
+    color: '#667eea',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'bold',
+    fontSize: '18px',
+  },
+  partnerName: {
+    margin: 0,
+    color: '#fff',
+  },
+  noPartnerContainer: {
+    textAlign: 'center',
+    padding: '60px 20px',
+  },
+  noPartnerIcon: {
+    fontSize: '64px',
+    marginBottom: '20px',
+  },
+  noPartnerText: {
+    fontSize: '18px',
+    marginBottom: '25px',
+    opacity: 0.9,
   },
   videoContainer: {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     flexWrap: 'wrap',
+    marginBottom: '20px',
   },
-  videoBox: { 
-    borderRadius: 8, 
-    background: '#000', 
+  videoWrapper: {
+    position: 'relative',
+    borderRadius: '15px',
+    overflow: 'hidden',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+    border: '3px solid rgba(255,255,255,0.2)',
+  },
+  videoBox: {
+    borderRadius: '15px',
+    backgroundColor: '#000',
     objectFit: 'cover',
+    display: 'block',
   },
-  status: { 
-    marginTop: 15, 
+  videoLabel: {
+    position: 'absolute',
+    bottom: '10px',
+    left: '10px',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: '8px',
+    padding: '5px 10px',
   },
-  buttonGroup: { 
-    display: 'flex', 
-    justifyContent: 'center', 
+  videoLabelText: {
+    color: '#fff',
+    fontSize: '12px',
+    fontWeight: '500',
+  },
+  connectingContainer: {
+    textAlign: 'center',
+    padding: '30px',
+  },
+  loader: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid rgba(255,255,255,0.3)',
+    borderTop: '4px solid #fff',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 15px',
+  },
+  connectingText: {
+    margin: 0,
+    opacity: 0.9,
+  },
+  controlsContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
     flexWrap: 'wrap',
   },
-  disconnectBtn: { 
-    backgroundColor: '#dc3545', 
-    color: '#fff', 
-    border: 'none', 
-    borderRadius: 6, 
+  actionBtn: {
+    border: 'none',
+    borderRadius: '12px',
+    fontWeight: '600',
     cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+    color: '#fff',
   },
-  nextBtn: { 
-    backgroundColor: '#28a745', 
-    color: '#fff', 
-    border: 'none', 
-    borderRadius: 6, 
+  primaryBtn: {
+    background: 'linear-gradient(45deg, #667eea, #764ba2)',
+    border: 'none',
+    borderRadius: '12px',
+    fontWeight: '600',
     cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+    color: '#fff',
   },
-  circleBtn: { 
-    borderRadius: '50%', 
-    border: 'none', 
-    color: '#fff', 
+  disconnectBtn: {
+    background: 'linear-gradient(45deg, #e74c3c, #c0392b)',
+  },
+  nextBtn: {
+    background: 'linear-gradient(45deg, #27ae60, #229954)',
+  },
+  circleBtn: {
+    borderRadius: '50%',
+    border: 'none',
     cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'bold',
   },
 };
+
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  button:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+  }
+  
+  button:active {
+    transform: translateY(0px);
+  }
+`;
+document.head.appendChild(styleSheet);
 
 

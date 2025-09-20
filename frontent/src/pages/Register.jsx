@@ -49,5 +49,5 @@ const styles = {
   container: { maxWidth:400, margin:'50px auto', padding:20, borderRadius:10, boxShadow:'0 4px 12px rgba(0,0,0,0.1)', backgroundColor:'#fff', display:'flex', flexDirection:'column', alignItems:'center' },
   title: { marginBottom:20, color:'#007BFF', fontSize:28, fontWeight:'bold' },
   input: { width:'100%', padding:10, marginBottom:15, borderRadius:6, border:'1px solid #ccc', fontSize:16 },
-  button: { width:'100%', padding:10, borderRadius:6, border:'none', color:'#fff', fontSize:16, fontWeight:'bold', cursor:'pointer', transition:'0.2s' },
+  button: { width:'100%', padding:10, borderRadius:6, border:'none', color:'#fff',  backgroundColor: '#28a745',fontSize:16, fontWeight:'bold', cursor:'pointer', transition:'0.2s' },
 };
