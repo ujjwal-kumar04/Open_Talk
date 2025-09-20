@@ -314,7 +314,6 @@ export default function Call1({ user, setPage, roomInfo }) {
             <div style={styles.buttonGroup}>
               <button style={styles.disconnectBtn} onClick={leave}>Disconnect</button>
               <button style={styles.nextBtn} onClick={next}>Next</button>
-              
               <button
                 style={{ ...styles.circleBtn, backgroundColor: isMuted ? '#dc3545' : '#007BFF' }}
                 onClick={toggleMute}
@@ -359,7 +358,6 @@ const styles = {
   buttonGroup: { marginTop: 20, display: 'flex', justifyContent: 'center', gap: 15, flexWrap: 'wrap' },
   disconnectBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#dc3545', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
   nextBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' },
-  restartBtn: { padding: '10px 25px', fontSize: 16, backgroundColor: '#ffc107', color: '#000', border: 'none', borderRadius: 6, cursor: 'pointer' },
   circleBtn: { width: 60, height: 60, borderRadius: '50%', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer' },
 };
 
