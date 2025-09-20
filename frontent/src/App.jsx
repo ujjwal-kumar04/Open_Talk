@@ -6,8 +6,21 @@ import Profile from './pages/Profile';
 import Register from './pages/Register';
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('token') || null);
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
+  const [token, setToken] = useState(() => {
+    try {
+      return localStorage.getItem('token') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [user, setUser] = useState(() => {
+    try {
+      const userData = localStorage.getItem('user');
+      return userData ? JSON.parse(userData) : null;
+    } catch {
+      return null;
+    }
+  });
   const [page, setPage] = useState('login');
   const [roomInfo, setRoomInfo] = useState({ roomId: null, partner: null });
 
@@ -33,6 +46,7 @@ function App() {
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: 900, margin: '0 auto' }}>
+      {/* Header */}
       <header style={styles.header}>
         <h1 style={styles.logo}>OpenTalk - Voice</h1>
         <div style={styles.nav}>
@@ -52,6 +66,7 @@ function App() {
         </div>
       </header>
 
+      {/* Page content */}
       <main style={{ padding: 20 }}>
         {page === 'register' && <Register afterRegister={handleLogin} />}
         {page === 'login' && <Login afterLogin={handleLogin} />}
@@ -67,6 +82,7 @@ function App() {
 
 export default App;
 
+// ---- Styles ----
 const styles = {
   header: {
     display: 'flex',

@@ -76,6 +76,7 @@ export default function Profile({ user, setUser, token }) {
   );
 }
 
+// Inline styles for simplicity
 const styles = {
   container: {
     maxWidth: 500,
